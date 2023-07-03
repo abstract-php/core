@@ -1,12 +1,12 @@
 <?php
 
-namespace Ab;
+namespace X;
 
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionFunction;
 
-class Execution {
+class Provoke {
 
   public static function class($name, array $arguments = []) {
     $reflection = new ReflectionClass($name);
@@ -29,12 +29,21 @@ class Execution {
     );
   }
 
+  public static function isStaticMethod($class, $name) {
+    $reflection = new ReflectionMethod($class, $name);
+    if ($reflection->isStatic()) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   public static function pass($objectOrMethod, $name, array $arguments, $type) {
 
     $variables = null;
 
     if ($type === 'class') {
-      $reflection = new ReflectionClass($objectOrMethod);
+      $reflection = new ReflectionClass($name);
       $constructor = $reflection->getConstructor();
       $parameters = [];
       if (!empty($constructor)) {

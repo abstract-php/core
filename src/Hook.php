@@ -1,6 +1,6 @@
 <?php
 
-namespace Ab;
+namespace X;
 
 
 class Hook {
