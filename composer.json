@@ -15,6 +15,6 @@
         }
     ],
     "require": {
-        "symfony/polyfill": "^1.27"
+        "symfony/polyfill-php81": "^1.27"
     }
 }
