@@ -13,7 +13,7 @@ Abstract is a powerful PHP library that introduces a componential markup languag
 To use Abstract in your PHP project, you need to have `Composer` installed. Then, run the following command:
 
 ```bash
-composer require abstract/core
+composer require abstracts/abstract
 ```
 
 This library also requires symfony/polyfill to work correctly. If you haven't installed it already, you can add it to your project using Composer:
@@ -30,7 +30,7 @@ To use Abstract in your PHP project, you need to import the library's namespace,
 <?php
 require 'vendor/autoload.php';
 
-use X\Processor;
+use Abstract\Processor;
 
 // Get AML content from resource
 $amlContent = Resource::get('src/resources/abstract/app/index.html');

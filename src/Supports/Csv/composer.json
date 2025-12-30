@@ -1,0 +1,17 @@
+{
+    "name": "abstracts/abstract-supports-csv",
+    "description": "",
+    "type": "library",
+    "license": "proprietary",
+    "autoload": {
+        "psr-4": {
+            "Abstract\\Supports\\Csv\\": "/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Abstracts",
+            "email": "developer@abstracts.one"
+        }
+    ]
+}
