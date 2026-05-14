@@ -1,0 +1,4 @@
+div = new Mapping {
+  ["@"] = new Mapping { ["class"] = "card" }
+  ["#"] = List(new Mapping { ["span"] = "Hello" })
+}

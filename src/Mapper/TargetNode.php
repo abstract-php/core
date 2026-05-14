@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Mapper;
+namespace Abstract\Mapper;
 
 final class TargetNode
 {

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Emitter;
+namespace Abstract\Emitter;
 
-use AbstractLang\Tree\Node;
+use Abstract\Tree\Node;
 
 final class JsonEmitter
 {
@@ -21,7 +21,7 @@ final class JsonEmitter
     public function emitTree(Node $node, bool $pretty = true, string $mode = self::MODE_CANONICAL): string
     {
         return json_encode(
-            $this->toJsonData($node, $mode),
+            $this->toData($node, $mode),
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | ($pretty ? JSON_PRETTY_PRINT : 0),
         );
     }
@@ -36,7 +36,7 @@ final class JsonEmitter
         return $this->emitTree($node, $pretty, self::MODE_TAGGED);
     }
 
-    private function toJsonData(Node $node, string $mode): mixed
+    public function toData(Node $node, string $mode = self::MODE_CANONICAL): mixed
     {
         return match ($mode) {
             self::MODE_CANONICAL => $node->toArray(),

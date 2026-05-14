@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Parser\Markup;
+namespace Abstract\Parser\Markup;
 
 final class MarkupParseOptions
 {

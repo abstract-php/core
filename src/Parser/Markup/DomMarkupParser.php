@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Parser\Markup;
+namespace Abstract\Parser\Markup;
 
-use AbstractLang\Exception\ParseException;
-use AbstractLang\Tree\Node;
+use Abstract\Exception\ParseException;
+use Abstract\Tree\Node;
 use DOMCdataSection;
 use DOMComment;
 use DOMDocument;
@@ -17,6 +17,12 @@ use DOMText;
 
 final class DomMarkupParser
 {
+    /** @var array<string, string> */
+    private array $preservedTagNames = [];
+
+    /** @var array<string, string> */
+    private array $preservedAttributeNames = [];
+
     /** @var array<string, true> */
     private const VOID_ELEMENTS = [
         'area' => true,
@@ -85,10 +91,16 @@ final class DomMarkupParser
     public function parseHtmlString(string $source, ?string $sourceName = null, ?MarkupParseOptions $options = null): Node
     {
         $options ??= new MarkupParseOptions();
+        if (!$this->containsMarkupToken($source)) {
+            return Node::value('string', $source, $this->meta($options, $sourceName, '/'));
+        }
+
         $sourceHadDoctype = $this->sourceHasDoctype($source);
+        $this->resetPreservedNames();
+
         $html = $options->fragment
-            ? '<abstract-fragment-root>' . $source . '</abstract-fragment-root>'
-            : $source;
+            ? '<abstract-fragment-root>' . $this->preserveUnsupportedNames($source, $sourceName) . '</abstract-fragment-root>'
+            : $this->preserveUnsupportedNames($source, $sourceName);
 
         $document = new DOMDocument('1.0', 'UTF-8');
         $previous = libxml_use_internal_errors(true);
@@ -212,7 +224,7 @@ final class DomMarkupParser
         }
 
         if ($node instanceof DOMElement) {
-            $name = $node->tagName;
+            $name = $this->restoreTagName($node->tagName);
             $props = $this->attributes($node);
             $children = isset(self::VOID_ELEMENTS[strtolower($name)])
                 ? []
@@ -269,6 +281,7 @@ final class DomMarkupParser
         $props = [];
         foreach ($element->attributes as $attribute) {
             $name = $attribute->nodeName;
+            $name = $this->restoreAttributeName($name);
             $value = $attribute->nodeValue ?? '';
             $lowerName = strtolower($name);
             $isBooleanAttribute = isset(self::BOOLEAN_ATTRIBUTES[$lowerName])
@@ -298,9 +311,163 @@ final class DomMarkupParser
         return '<?xml encoding="UTF-8">' . $source;
     }
 
+    private function resetPreservedNames(): void
+    {
+        $this->preservedTagNames = [];
+        $this->preservedAttributeNames = [];
+    }
+
+    private function preserveUnsupportedNames(string $source, ?string $sourceName): string
+    {
+        return preg_replace_callback(
+            '/(<!--.*?-->|<!\[CDATA\[.*?\]\]>|<script\b[^>]*>.*?<\/script\s*>|<style\b[^>]*>.*?<\/style\s*>|<[^>]+>)/isu',
+            function (array $match) use ($source, $sourceName): string {
+                $tag = $match[0];
+                $offset = $match[0][1] ?? null;
+                if (is_array($tag)) {
+                    $tag = $tag[0];
+                }
+                if (!is_string($tag) || $this->shouldSkipTagToken($tag)) {
+                    return is_string($tag) ? $tag : '';
+                }
+
+                if ($this->isRawTextBlock($tag)) {
+                    return $this->preserveRawTextBlock($tag, $source, $sourceName, is_int($offset) ? $offset : null);
+                }
+
+                return $this->preserveTagToken($tag, $source, $sourceName, is_int($offset) ? $offset : null);
+            },
+            $source,
+            flags: PREG_OFFSET_CAPTURE,
+        ) ?? $source;
+    }
+
+    private function shouldSkipTagToken(string $tag): bool
+    {
+        return preg_match('/^<\s*(?:!|\?)/u', $tag) === 1;
+    }
+
+    private function isRawTextBlock(string $tag): bool
+    {
+        return preg_match('/^<(script|style)\b/i', $tag) === 1
+            && preg_match('/<\/(script|style)\s*>$/i', $tag) === 1;
+    }
+
+    private function preserveRawTextBlock(string $block, string $source, ?string $sourceName, ?int $offset): string
+    {
+        if (preg_match('/^(<(script|style)\b[^>]*>)(.*)(<\/\2\s*>)$/isu', $block, $matches) !== 1) {
+            return $block;
+        }
+
+        $open = $this->preserveTagToken($matches[1], $source, $sourceName, $offset);
+        $closeOffset = $offset === null ? null : $offset + strlen($matches[1]) + strlen($matches[3]);
+        $close = $this->preserveTagToken($matches[4], $source, $sourceName, $closeOffset);
+
+        return $open . $matches[3] . $close;
+    }
+
+    private function preserveTagToken(string $tag, string $source, ?string $sourceName, ?int $offset): string
+    {
+        if (preg_match('/^<\s*(\/?)\s*([^\s\/>]+)/u', $tag, $matches) !== 1) {
+            return $tag;
+        }
+
+        $closing = $matches[1] === '/';
+        $name = $matches[2];
+        if (str_starts_with($name, ':') && !$this->isPortableRuntimeTagName($name)) {
+            throw new ParseException($this->formatSourceTextError(
+                'Runtime markup node names after ":" must use portable ASCII names.',
+                $source,
+                $sourceName,
+                $offset,
+                $tag,
+            ));
+        }
+
+        $result = $tag;
+        if ($this->shouldPreserveName($name)) {
+            $placeholder = $this->tagPlaceholder($name);
+            $result = preg_replace('/^<(\s*\/?\s*)' . preg_quote($name, '/') . '/u', '<$1' . $placeholder, $result, 1) ?? $result;
+        }
+
+        if (!$closing) {
+            $result = $this->preserveAttributeNames($result);
+        }
+
+        return $result;
+    }
+
+    private function preserveAttributeNames(string $tag): string
+    {
+        return preg_replace_callback(
+            '/(\s+)([^\s\/=<>"\']+)(\s*(?:=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+))?)/u',
+            function (array $matches): string {
+                $name = $matches[2];
+                if (!$this->shouldPreserveName($name)) {
+                    return $matches[0];
+                }
+
+                return $matches[1] . $this->attributePlaceholder($name) . $matches[3];
+            },
+            $tag,
+        ) ?? $tag;
+    }
+
+    private function shouldPreserveName(string $name): bool
+    {
+        return strlen($name) > 40 || preg_match('/^[a-z][a-z0-9-]*$/', $name) !== 1;
+    }
+
+    private function isPortableRuntimeTagName(string $name): bool
+    {
+        return preg_match('/^:[A-Za-z_][A-Za-z0-9_.-]*$/', $name) === 1;
+    }
+
+    private function tagPlaceholder(string $name): string
+    {
+        $existing = array_search($name, $this->preservedTagNames, true);
+        if (is_string($existing)) {
+            return $existing;
+        }
+
+        $placeholder = 'abstract-tag-' . count($this->preservedTagNames);
+        $this->preservedTagNames[$placeholder] = $name;
+        return $placeholder;
+    }
+
+    private function attributePlaceholder(string $name): string
+    {
+        $existing = array_search($name, $this->preservedAttributeNames, true);
+        if (is_string($existing)) {
+            return $existing;
+        }
+
+        $placeholder = 'data-abstract-attr-' . count($this->preservedAttributeNames);
+        $this->preservedAttributeNames[$placeholder] = $name;
+        return $placeholder;
+    }
+
+    private function restoreTagName(string $name): string
+    {
+        return $this->preservedTagNames[strtolower($name)] ?? $name;
+    }
+
+    private function restoreAttributeName(string $name): string
+    {
+        return $this->preservedAttributeNames[strtolower($name)] ?? $name;
+    }
+
     private function sourceHasDoctype(string $source): bool
     {
         return preg_match('/^\s*<!doctype\b/i', $source) === 1;
+    }
+
+    private function containsMarkupToken(string $source): bool
+    {
+        return preg_match(
+            '/<!--.*?-->|<!\[CDATA\[.*?\]\]>|<!doctype\b[^>]*>|<\?xml\b[^>]*\?>|<\s*\/?\s*[:\p{L}_\.][^\s<>]*[^>]*>/isu',
+            $source,
+        ) === 1;
     }
 
     /**
@@ -356,6 +523,25 @@ final class DomMarkupParser
         }
 
         return $message . ' Source: ' . $location . '.';
+    }
+
+    private function formatSourceTextError(string $message, string $source, ?string $sourceName, ?int $offset, string $token): string
+    {
+        $line = $offset === null ? 0 : substr_count(substr($source, 0, $offset), "\n") + 1;
+        $location = $sourceName !== null ? $sourceName : 'markup source';
+        if ($line > 0) {
+            $location .= ':' . $line;
+        }
+        $sourceLine = $line > 0 ? $this->sourceLineFromString($source, $line) : null;
+        $location .= ' near "' . trim($sourceLine ?? $token) . '"';
+
+        return $message . ' Source: ' . $location . '.';
+    }
+
+    private function sourceLineFromString(string $source, int $line): ?string
+    {
+        $lines = explode("\n", $source);
+        return $lines[$line - 1] ?? null;
     }
 
     private function sourceLine(?string $sourceName, int $line): ?string

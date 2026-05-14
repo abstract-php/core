@@ -1,0 +1,14 @@
+section:
+  '@':
+    class: hero
+  '#':
+    - h1: YAML Runtime Example
+    - ':if':
+        '@':
+          test:
+            ':expr':
+              var: showDetails
+        '#':
+          - p: Details are visible from context.
+        ':else':
+          - p: Details are hidden.

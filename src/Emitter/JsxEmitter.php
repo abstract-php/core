@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Emitter;
+namespace Abstract\Emitter;
 
-use AbstractLang\Mapper\TargetNode;
+use Abstract\Mapper\TargetNode;
 
 final class JsxEmitter implements EmitterInterface
 {

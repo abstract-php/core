@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
 
-use AbstractLang\AbstractCore;
-use AbstractLang\Emitter\JsonEmitter;
-use AbstractLang\Parser\Markup\MarkupParseOptions;
+use Abstract\AbstractCore;
+use Abstract\Emitter\JsonEmitter;
+use Abstract\Parser\Markup\MarkupParseOptions;
 
 $core = new AbstractCore();
 $tree = $core->parseHtmlFile(example_path('00-chaotic-markup-roundtrip.source.html'), new MarkupParseOptions(includeMeta: false));

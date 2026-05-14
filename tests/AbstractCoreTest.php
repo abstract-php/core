@@ -2,23 +2,24 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Tests;
+namespace Abstract\Tests;
 
-use AbstractLang\AbstractCore;
-use AbstractLang\Emitter\HtmlEmitter;
-use AbstractLang\Emitter\JsonEmitter;
-use AbstractLang\Emitter\JsxEmitter;
-use AbstractLang\Exception\ImportException;
-use AbstractLang\Exception\MappingException;
-use AbstractLang\Exception\ParseException;
-use AbstractLang\Exception\RuntimeResolutionException;
-use AbstractLang\Mapper\HtmlMapper;
-use AbstractLang\Mapper\ReactMapper;
-use AbstractLang\Parser\Json\JsonTagParser;
-use AbstractLang\Parser\Markup\DomMarkupParser;
-use AbstractLang\Parser\Markup\MarkupParseOptions;
-use AbstractLang\Runtime\RuntimeResolver;
-use AbstractLang\Tree\Node;
+use Abstract\AbstractCore;
+use Abstract\Emitter\HtmlEmitter;
+use Abstract\Emitter\JsonEmitter;
+use Abstract\Emitter\JsxEmitter;
+use Abstract\Exception\ImportException;
+use Abstract\Exception\MappingException;
+use Abstract\Exception\ParseException;
+use Abstract\Exception\RuntimeResolutionException;
+use Abstract\Mapper\HtmlMapper;
+use Abstract\Mapper\ReactMapper;
+use Abstract\Parser\Json\JsonTagParser;
+use Abstract\Parser\Markup\DomMarkupParser;
+use Abstract\Parser\Markup\MarkupParseOptions;
+use Abstract\Parser\Pkl\PklTagParser;
+use Abstract\Runtime\RuntimeResolver;
+use Abstract\Tree\Node;
 use PHPUnit\Framework\TestCase;
 
 if (PHP_SAPI !== 'cli') {
@@ -272,6 +273,27 @@ final class AbstractCoreTest extends TestCase
         );
     }
 
+    public function testTextOnlyMarkupDoesNotBecomeParagraph(): void
+    {
+        $tree = $this->core->parseHtmlFile(__DIR__ . '/../examples/00-text-markup-roundtrip.source.html', new MarkupParseOptions(includeMeta: false));
+        $compactJson = $this->core->treeJson($tree, pretty: false, mode: JsonEmitter::MODE_COMPACT);
+
+        self::assertSame(Node::VALUE, $tree->kind);
+        self::assertSame('Hello Test', $tree->value);
+        self::assertSame('"Hello Test"', $compactJson);
+        self::assertSame('Hello Test', $this->core->renderHtml($this->core->parseJson($compactJson)));
+    }
+
+    public function testTextOnlyMarkupPreservesWhitespaceAndPunctuation(): void
+    {
+        $source = "  Hello, friend! Are you ready?\n";
+        $tree = $this->core->parseHtml($source, options: new MarkupParseOptions(includeMeta: false));
+
+        self::assertSame(Node::VALUE, $tree->kind);
+        self::assertSame($source, $tree->value);
+        self::assertSame($source, $this->core->renderHtml($tree));
+    }
+
     public function testMarkupCompactJsonCanReparseAndRender(): void
     {
         $parser = new DomMarkupParser();
@@ -301,6 +323,45 @@ final class AbstractCoreTest extends TestCase
             '<section><p>สวัสดี</p><style>.a > .b { content: "&"; }</style></section>',
             (new HtmlEmitter())->emit((new HtmlMapper())->map($tree)),
         );
+    }
+
+    public function testMarkupParserPreservesNonEnglishAndLongNames(): void
+    {
+        $longName = str_repeat('hello', 45);
+        $source = '<root><กรรม ทดสอบ="20">ทดสอบ</กรรม><Timothée>ok</Timothée><xsl:if>GOF</xsl:if><' . $longName . '>123</' . $longName . '></root>';
+
+        $tree = (new DomMarkupParser())->parseHtmlString(
+            $source,
+            options: new MarkupParseOptions(fragment: true, includeMeta: false),
+        );
+
+        self::assertSame(
+            $source,
+            (new HtmlEmitter())->emit((new HtmlMapper())->map($tree)),
+        );
+        self::assertStringContainsString('"กรรม"', (new JsonEmitter())->emitCompactTree($tree, true));
+        self::assertStringContainsString('"ทดสอบ"', (new JsonEmitter())->emitCompactTree($tree, true));
+        self::assertStringContainsString('"Timothée"', (new JsonEmitter())->emitCompactTree($tree, true));
+        self::assertStringContainsString('"xsl:if"', (new JsonEmitter())->emitCompactTree($tree, true));
+    }
+
+    public function testMarkupStyleTypedRuntimeBodiesParseAsExplicitValues(): void
+    {
+        set_error_handler(static function (int $severity, string $message): never {
+            throw new \ErrorException($message, 0, $severity);
+        });
+
+        try {
+            $string = $this->parser->parseString('{":string":{"#":["456"]}}');
+            $int = $this->parser->parseString('{":int":{"#":["900"]}}');
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame(Node::VALUE, $string->kind);
+        self::assertSame('456', $string->value);
+        self::assertSame(Node::VALUE, $int->kind);
+        self::assertSame(900, $int->value);
     }
 
     public function testMarkupParserLiftsDomDocumentVoidElementChildren(): void
@@ -343,6 +404,131 @@ final class AbstractCoreTest extends TestCase
         } catch (ParseException $exception) {
             self::assertStringContainsString($path . ':3', $exception->getMessage());
             self::assertStringContainsString('<:กรรม>bad</:กรรม>', $exception->getMessage());
+        }
+    }
+
+    public function testXmlParseAndRenderRoundtrip(): void
+    {
+        $tree = $this->core->parseXml(
+            '<root><item id="1">Hi &amp; Bye</item><empty></empty></root>',
+            options: new MarkupParseOptions(mode: MarkupParseOptions::MODE_XML, includeMeta: false),
+        );
+
+        self::assertSame('<root><item id="1">Hi &amp; Bye</item><empty></empty></root>', $this->core->renderXml($tree));
+    }
+
+    public function testYamlParsesTagKeySyntaxAndRendersYaml(): void
+    {
+        $tree = $this->core->parseYaml(<<<'YAML'
+div:
+  '@':
+    class: card
+  '#':
+    - span: Hello
+    - ':if':
+        '@':
+          test:
+            ':expr':
+              var: show
+        '#':
+          - strong: Yes
+        ':else':
+          - em: No
+YAML);
+
+        self::assertSame('<div class="card"><span>Hello</span><strong>Yes</strong></div>', $this->core->renderHtml($tree, ['show' => true]));
+        self::assertStringContainsString("class: card", $this->core->renderYaml($tree, ['show' => true]));
+    }
+
+    public function testYamlScalarRootParsesAsValue(): void
+    {
+        $tree = $this->core->parseYaml('Hello Test');
+
+        self::assertSame(Node::VALUE, $tree->kind);
+        self::assertSame('Hello Test', $tree->value);
+    }
+
+    public function testTomlParsesObjectRootsAndRendersToml(): void
+    {
+        $tree = $this->core->parseToml(<<<'TOML'
+[div]
+"#" = ["Hello"]
+
+[div."@"]
+class = "card"
+TOML);
+
+        self::assertSame('<div class="card">Hello</div>', $this->core->renderHtml($tree));
+        $toml = $this->core->renderToml($tree);
+        self::assertStringContainsString('[div]', $toml);
+        self::assertSame('<div class="card">Hello</div>', $this->core->renderHtml($this->core->parseToml($toml)));
+    }
+
+    public function testTomlRejectsScalarDocumentAndScalarOutput(): void
+    {
+        $this->expectException(ParseException::class);
+        $this->core->parseToml('"Hello"');
+    }
+
+    public function testTomlScalarTreeOutputIsInvalid(): void
+    {
+        $this->expectException(MappingException::class);
+        $this->core->renderToml(Node::value('string', 'Hello'));
+    }
+
+    public function testPklParsesThroughCli(): void
+    {
+        $this->skipWhenPklIsMissing();
+
+        $tree = $this->core->parsePkl(<<<'PKL'
+div = new Mapping {
+  ["@"] = new Mapping { ["class"] = "card" }
+  ["#"] = List("Hello")
+}
+PKL);
+
+        self::assertSame('<div class="card">Hello</div>', $this->core->renderHtml($tree));
+    }
+
+    public function testPklReportsUnavailableCliClearly(): void
+    {
+        $this->expectException(ParseException::class);
+        (new PklTagParser(binary: '/definitely/missing/abstract-pkl'))->parseString('div = "Hello"');
+    }
+
+    public function testPklRenderSyntaxValidatesThroughCli(): void
+    {
+        $this->skipWhenPklIsMissing();
+
+        $tree = $this->parser->parseString('{"div":{"@":{"class":"card"},"#":["Hello",{"span":"World"}]}}');
+        $pkl = $this->core->renderPkl($tree);
+        $reparsed = $this->core->parsePkl($pkl);
+
+        self::assertSame('<div class="card">Hello<span>World</span></div>', $this->core->renderHtml($reparsed));
+    }
+
+    public function testDataFormatParsersNormalizeEquivalentSources(): void
+    {
+        $this->skipWhenPklIsMissing();
+
+        $json = $this->parser->parseFile(__DIR__ . '/../fixtures/formats/equivalent.input.json');
+        $yaml = $this->core->parseYamlFile(__DIR__ . '/../fixtures/formats/equivalent.input.yaml');
+        $toml = $this->core->parseTomlFile(__DIR__ . '/../fixtures/formats/equivalent.input.toml');
+        $pkl = $this->core->parsePklFile(__DIR__ . '/../fixtures/formats/equivalent.input.pkl');
+        $emitter = new JsonEmitter();
+        $expected = json_decode((string) file_get_contents(__DIR__ . '/../fixtures/formats/equivalent.compact.json'), true);
+
+        self::assertSame($expected, $emitter->toData($json, JsonEmitter::MODE_COMPACT));
+        self::assertSame($emitter->toData($json, JsonEmitter::MODE_COMPACT), $emitter->toData($yaml, JsonEmitter::MODE_COMPACT));
+        self::assertSame($emitter->toData($json, JsonEmitter::MODE_COMPACT), $emitter->toData($toml, JsonEmitter::MODE_COMPACT));
+        self::assertSame($emitter->toData($json, JsonEmitter::MODE_COMPACT), $emitter->toData($pkl, JsonEmitter::MODE_COMPACT));
+    }
+
+    private function skipWhenPklIsMissing(): void
+    {
+        $path = trim((string) shell_exec('command -v pkl 2>/dev/null'));
+        if ($path === '') {
+            self::markTestSkipped('Pkl CLI is not installed or not on PATH.');
         }
     }
 

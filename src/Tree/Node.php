@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Tree;
+namespace Abstract\Tree;
 
 use InvalidArgumentException;
 

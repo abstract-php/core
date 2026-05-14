@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Runtime;
+namespace Abstract\Runtime;
 
-use AbstractLang\Exception\ImportException;
-use AbstractLang\Exception\RuntimeResolutionException;
-use AbstractLang\Parser\Json\JsonTagParser;
-use AbstractLang\Tree\Node;
+use Abstract\Exception\ImportException;
+use Abstract\Exception\RuntimeResolutionException;
+use Abstract\Parser\Json\JsonTagParser;
+use Abstract\Tree\Node;
 
 final class RuntimeResolver
 {

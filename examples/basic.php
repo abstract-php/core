@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-use AbstractLang\AbstractCore;
+use Abstract\AbstractCore;
 
 $core = new AbstractCore();
 $tree = $core->parseJson('{

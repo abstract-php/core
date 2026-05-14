@@ -1,0 +1,9 @@
+[article]
+"#" = [
+  { h1 = "TOML Storage Example" },
+  { p = "TOML is strongest for object/table roots." }
+]
+
+[article."@"]
+class = "note"
+id = "toml-example"

@@ -17,10 +17,11 @@ Abstract Core v0 currently supports:
 - `:props` and `:attributes` parent prop modifiers
 - data-based `:expr`, `:if`, `:else`, and `:each`
 - inline `:import` and `:include`
-- DOMDocument-backed HTML markup parsing
+- DOMDocument-backed HTML and XML markup parsing
+- YAML, TOML, and Pkl parsing through the shared tag-key normalizer
 - compact, tagged, and canonical JSON tree export
 - strict and loose runtime modes
-- HTML and JSX-like output pipelines
+- HTML, XML, YAML, TOML, Pkl, and JSX-like output pipelines
 - shared JSON fixtures and PHPUnit coverage
 - benchmark scripts for JSON core flows and large HTML roundtrips
 
@@ -39,7 +40,7 @@ composer install
 
 require 'vendor/autoload.php';
 
-use AbstractLang\AbstractCore;
+use Abstract\AbstractCore;
 
 $core = new AbstractCore();
 
@@ -177,9 +178,9 @@ For v0, slot children are appended to the imported root element or fragment. A r
 HTML can be parsed through the same canonical tree model:
 
 ```php
-use AbstractLang\AbstractCore;
-use AbstractLang\Emitter\JsonEmitter;
-use AbstractLang\Parser\Markup\MarkupParseOptions;
+use Abstract\AbstractCore;
+use Abstract\Emitter\JsonEmitter;
+use Abstract\Parser\Markup\MarkupParseOptions;
 
 $core = new AbstractCore();
 $tree = $core->parseHtmlFile('benchmarks/big-html.html', new MarkupParseOptions(includeMeta: false));
@@ -196,6 +197,45 @@ JSON export modes:
 - `compact`: storage-oriented tag-key JSON with fewer model strings
 - `tagged`: explicit Abstract tags for API/debug use
 
+Text-only markup is treated as content, not as an implicit DOM paragraph:
+
+```php
+$tree = $core->parseHtml('Hello Test');
+
+echo $core->treeJson($tree, pretty: false, mode: JsonEmitter::MODE_COMPACT);
+// "Hello Test"
+
+echo $core->renderHtml($tree);
+// Hello Test
+```
+
+## XML, YAML, TOML, And Pkl
+
+All data/config formats decode into native values and then use the same tag-key normalizer as JSON.
+
+```php
+$tree = $core->parseYamlFile('page.abstract.yaml');
+
+echo $core->renderHtml($tree);
+echo $core->renderYaml($tree);
+```
+
+Available parser methods:
+
+- `parseXml`, `parseXmlFile`
+- `parseYaml`, `parseYamlFile`
+- `parseToml`, `parseTomlFile`
+- `parsePkl`, `parsePklFile`
+
+Available render methods:
+
+- `renderXml`
+- `renderYaml`
+- `renderToml`
+- `renderPkl`
+
+YAML supports scalar, list, and map roots. TOML and Pkl rendering require object/map roots because their module/document syntax is property-oriented. Pkl parsing uses the local `pkl` CLI with `eval --format=json --no-project --root-dir`; it is an explicit parser path for trusted local config modules, not implicit code execution.
+
 ## Tests
 
 ```bash
@@ -205,7 +245,7 @@ JSON export modes:
 Current verified result:
 
 ```text
-OK (33 tests, 47 assertions)
+OK (47 tests, 80 assertions)
 ```
 
 ## Benchmarks
@@ -219,11 +259,12 @@ Benchmark results are recorded in [PERFORMANCE.md](PERFORMANCE.md).
 
 ## Examples
 
-Runnable examples live in [examples/](examples/). They include JSON-to-HTML, React/JSX mapping, runtime logic, imports, small HTML roundtrip, and a large `examples/big-html.html` roundtrip that writes compact JSON and HTML output under `examples/output/`.
+Runnable examples live in [examples/](examples/). They include JSON-to-HTML, React/JSX mapping, runtime logic, imports, text-only markup, XML/YAML/TOML/Pkl scenarios, a small HTML roundtrip, and a large `examples/big-html.html` roundtrip that writes compact JSON and HTML output under `examples/output/`.
 
 ## Documentation
 
 - [SPEC.md](SPEC.md) defines the portable Abstract syntax and processing rules.
 - [ARCHITECTURE.md](ARCHITECTURE.md) explains the PHP v0 implementation.
+- [DEVELOPMENT.md](DEVELOPMENT.md) explains how to change the codebase safely.
 - [REPORT.md](REPORT.md) records the repo rescue and design decisions.
 - [PERFORMANCE.md](PERFORMANCE.md) records benchmark method and results.

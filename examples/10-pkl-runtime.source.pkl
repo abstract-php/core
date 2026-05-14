@@ -1,0 +1,15 @@
+card = new Mapping {
+  ["@"] = new Mapping {
+    ["class"] = "card"
+  }
+  ["#"] = List(
+    new Mapping { ["h2"] = "Pkl Runtime Example" },
+    new Mapping { [":each"] = new Mapping {
+      ["@"] = new Mapping {
+        ["items"] = new Mapping { [":expr"] = new Mapping { ["var"] = "items" } }
+        ["as"] = "item"
+      }
+      ["#"] = List(new Mapping { ["span"] = new Mapping { [":expr"] = new Mapping { ["var"] = "item" } } })
+    } }
+  )
+}

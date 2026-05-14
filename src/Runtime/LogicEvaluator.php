@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Runtime;
+namespace Abstract\Runtime;
 
-use AbstractLang\Exception\RuntimeResolutionException;
+use Abstract\Exception\RuntimeResolutionException;
 
 final class LogicEvaluator
 {

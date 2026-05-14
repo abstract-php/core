@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
 
-use AbstractLang\AbstractCore;
-use AbstractLang\Emitter\JsonEmitter;
+use Abstract\AbstractCore;
+use Abstract\Emitter\JsonEmitter;
 
 $core = new AbstractCore();
 $tree = $core->parseJsonFile(example_path('01-basic-html.source.json'));

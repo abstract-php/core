@@ -23,23 +23,27 @@ src/
   Tree/
   Parser/Json/
   Parser/Markup/
+  Parser/Native/
+  Parser/Yaml/
+  Parser/Toml/
+  Parser/Pkl/
   Runtime/
   Mapper/
   Emitter/
   Exception/
 ```
 
-The namespace is `AbstractLang\...` because `abstract` is a PHP keyword and the design should not lean on PHP-only naming.
+The public PHP namespace is `Abstract\...`. PHP accepts the capitalized namespace, but lowercase `abstract` remains a reserved keyword, so docs and code should keep the capitalized form.
 
 ## Tree Model
 
-`AbstractLang\Tree\Node` is the canonical tree value object. It supports `element`, `runtime`, `value`, and `fragment` node creation plus array serialization for shared fixtures.
+`Abstract\Tree\Node` is the canonical tree value object. It supports `element`, `runtime`, `value`, and `fragment` node creation plus array serialization for shared fixtures.
 
 The tree is intentionally strict and plain. Render behavior does not live on the node model.
 
-## JSON Parser
+## Native Tag Parser
 
-`JsonTagParser` uses `json_decode(..., JSON_THROW_ON_ERROR)` and converts JSON objects into tag-key nodes.
+`Parser/Native/NativeTagParser` owns the tag-key normalization rules for decoded native data. JSON, YAML, TOML, and Pkl all delegate here after their source format is decoded.
 
 Important parser decisions:
 
@@ -51,6 +55,20 @@ Important parser decisions:
 - Objects without `@` or `#` become shorthand child maps.
 - Source metadata is optional and lightweight.
 
+`JsonTagParser` now only handles `json_decode(..., JSON_THROW_ON_ERROR)` plus file IO, then delegates to `NativeTagParser`. This keeps JSON as the portable reference syntax without duplicating the rules in every parser.
+
+## Data Parsers
+
+YAML uses `symfony/yaml` to decode scalars, lists, and maps. TOML uses `devium/toml`; because TOML documents are table-oriented, scalar document roots are invalid at parse time and scalar/list roots are invalid at emit time.
+
+Pkl uses the installed `pkl` CLI:
+
+```text
+pkl eval --format=json --no-project --root-dir=<source-dir> --working-dir=<source-dir> <file>
+```
+
+The PHP bridge uses `proc_open` with an argument array, a timeout, and a restricted root directory. Pkl is treated as an explicit trusted-local parser/evaluator, not as a hidden runtime execution path.
+
 ## Markup Parser
 
 `Parser/Markup/DomMarkupParser` is the v0 HTML/XML-style parser. It is a new implementation that uses DOMDocument/libxml as the parsing engine and normalizes DOM nodes into the same Abstract Tree model as JSON.
@@ -59,10 +77,12 @@ HTML parser decisions:
 
 - DOMDocument is the fast default path.
 - parser options control HTML/XML mode, fragment parsing, whitespace/comments/doctype preservation, metadata, and libxml flags.
+- unsupported DOMDocument names are temporarily replaced with safe placeholders, then restored after DOM conversion.
 - a UTF-8 hint is injected before parsing and ignored during DOM conversion.
 - DOM comments, doctypes, CDATA, and raw text are represented as value node types.
 - `script` and `style` children map to raw text so output does not escape executable/source payload text.
 - HTML void elements are normalized as childless even when DOMDocument nests following nodes under them.
+- text-only HTML source bypasses DOMDocument and becomes a single string value, preventing libxml's implicit `<p>` insertion.
 
 The old draft markup parser is not a dependency. Its useful direction was native parser integration; its API and abstractions were replaced.
 
@@ -89,7 +109,7 @@ Circular imports are detected with an import stack and reported as strict errors
 
 ## Mappers And Emitters
 
-`HtmlMapper` and `ReactMapper` produce target nodes. `HtmlEmitter` and `JsxEmitter` serialize those target nodes.
+`HtmlMapper` and `ReactMapper` produce target nodes. `HtmlEmitter`, `XmlEmitter`, and `JsxEmitter` serialize those target nodes. JSON/YAML/TOML/Pkl emitters serialize the resolved Abstract Tree through compact/tagged/canonical data modes.
 
 HTML output:
 
@@ -108,12 +128,26 @@ JSX output:
 - text escapes JSX-sensitive characters
 - unresolved runtime nodes fail in strict mode
 
+XML output:
+
+- element nodes always emit explicit closing tags
+- text and attributes use XML escaping
+- HTML void tag behavior is not applied
+
+YAML/TOML/Pkl output:
+
+- runtime resolution runs first through `AbstractCore`
+- compact mode is the default serialized data shape
+- TOML and Pkl require object/map roots
+
 ## Performance Strategy
 
 The v0 implementation keeps the hot path straightforward:
 
 - native JSON parsing
 - native DOMDocument/libxml parsing for markup
+- native YAML/TOML library decoders
+- Pkl CLI JSON emission for Pkl modules
 - single parser/normalizer pass
 - explicit runtime dispatch
 - import parse cache

@@ -25,12 +25,12 @@ Environment from the latest run:
 
 | Benchmark | Iterations | Total ms | Mean us | Peak MB |
 | --- | ---: | ---: | ---: | ---: |
-| json_decode only | 1000 | 1.946 | 1.946 | 4 |
-| parse + normalize | 1000 | 10.918 | 10.918 | 4 |
-| parse + normalize + resolve runtime | 1000 | 31.573 | 31.573 | 4 |
-| parse + normalize + resolve + map to HTML | 1000 | 48.566 | 48.566 | 4 |
-| import resolve cold cache | 1 | 0.086 | 85.666 | 4 |
-| import resolve warm cache | 100 | 3.332 | 33.323 | 4 |
+| json_decode only | 1000 | 1.875 | 1.875 | 4 |
+| parse + normalize | 1000 | 13.033 | 13.033 | 4 |
+| parse + normalize + resolve runtime | 1000 | 33.927 | 33.927 | 4 |
+| parse + normalize + resolve + map to HTML | 1000 | 52.751 | 52.751 | 4 |
+| import resolve cold cache | 1 | 0.219 | 219.125 | 4 |
+| import resolve warm cache | 100 | 3.330 | 33.303 | 4 |
 
 ## Big HTML Markup Results
 
@@ -44,12 +44,12 @@ Generated files are written to `benchmarks/output/`, which is ignored by git:
 
 | Benchmark | Time ms |
 | --- | ---: |
-| DOM parse only | 3.405 |
-| parse + normalize | 4.042 |
-| compact JSON export | 1.850 |
-| compact JSON reparse | 2.999 |
-| HTML emit | 1.583 |
-| output reparse for comparison | 4.253 |
+| DOM parse only | 3.545 |
+| parse + normalize | 7.189 |
+| compact JSON export | 1.927 |
+| compact JSON reparse | 3.698 |
+| HTML emit | 1.550 |
+| output reparse for comparison | 6.892 |
 
 | Artifact | Size |
 | --- | ---: |
@@ -62,13 +62,14 @@ Structural fingerprint comparison: `yes`.
 ## Observations
 
 - Native `json_decode` is extremely fast and should remain the first stage for JSON.
-- Parse plus normalization is roughly 5.5x raw decode on the sample, which is reasonable for object allocation and metadata.
+- Parse plus normalization is roughly 7x raw decode on the sample, which is reasonable after moving the rules into a reusable native-data parser.
 - Runtime resolution dominates the current benchmark because expressions and loops walk the tree.
 - HTML mapping/emission adds predictable cost after runtime resolution.
 - Warm import resolution avoids reparsing imported files and sits close to normal resolve cost.
 - Native DOMDocument parsing is fast on the 806 KB HTML sample; normalization adds roughly 1 ms over DOM parse alone in this run.
 - Compact JSON is larger than the source HTML for this sample because it preserves tree structure, explicit arrays, attributes, comments, and escaped JSON strings.
 - Void-element normalization is required for DOMDocument HTML parity on real-world `<picture><source>...` markup.
+- YAML/TOML/Pkl parsers intentionally reuse the same native-data normalizer; format-library decode cost should be benchmarked separately once real workloads exist.
 
 ## Optimization Opportunities
 

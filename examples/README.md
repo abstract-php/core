@@ -10,6 +10,10 @@ php examples/03-runtime-dashboard.mapper.php
 php examples/04-imports.mapper.php
 php examples/05-markup-roundtrip.mapper.php
 php examples/06-big-html.mapper.php
+php examples/07-xml-roundtrip.mapper.php
+php examples/08-yaml-runtime.mapper.php
+php examples/09-toml-storage.mapper.php
+php examples/10-pkl-runtime.mapper.php
 ```
 
 ## Scenarios
@@ -21,5 +25,9 @@ php examples/06-big-html.mapper.php
 - `04-imports.*`: inline `:import` with props and slot children.
 - `05-markup-roundtrip.*`: HTML source parsed to Abstract compact JSON and emitted back to HTML.
 - `06-big-html.mapper.php`: parses `examples/big-html.html`, saves compact JSON and roundtrip HTML, and checks structural equality.
+- `07-xml-roundtrip.*`: XML source parsed through DOM and emitted with XML tag behavior.
+- `08-yaml-runtime.*`: YAML tag-key source with runtime logic rendered to HTML and YAML.
+- `09-toml-storage.*`: TOML table source used as compact storage and rendered to HTML/TOML.
+- `10-pkl-runtime.*`: Pkl module parsed through the Pkl CLI, resolved with context, and rendered back to Pkl.
 
-Generated files are written to `examples/output/` and ignored by git.
+Generated files are written to `examples/output/` and ignored by git. When examples are opened through a local web server that cannot write to that directory, saving is skipped and the example still prints its result.

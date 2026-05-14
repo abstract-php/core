@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
 
-use AbstractLang\AbstractCore;
-use AbstractLang\Emitter\JsxEmitter;
-use AbstractLang\Mapper\ReactMapper;
+use Abstract\AbstractCore;
+use Abstract\Emitter\JsxEmitter;
+use Abstract\Mapper\ReactMapper;
 
 $core = new AbstractCore();
 $tree = $core->parseJsonFile(example_path('02-react-jsx.source.json'));

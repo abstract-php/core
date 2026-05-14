@@ -34,7 +34,7 @@ The old tracked `src/` implementation and manual `tests/` scripts were replaced 
 
 Major replacements:
 
-- mutable `Abstract\Abstraction` model -> `AbstractLang\Tree\Node`
+- legacy mutable `Abstract\Abstraction` model -> current `Abstract\Tree\Node`
 - reflection-heavy parser/resolver/factory draft -> explicit parser/runtime/mapper contracts
 - unsafe execution-oriented compiler intent -> safe data-based runtime
 - manual probe scripts -> PHPUnit suite
@@ -43,9 +43,11 @@ Major replacements:
 
 ## Design Decisions
 
-- The namespace is `AbstractLang` to avoid PHP keyword confusion and to keep concepts portable.
-- JSON is the only v0 source parser.
+- The public PHP namespace is capitalized `Abstract`; lowercase `abstract` remains a reserved keyword and should be avoided as an identifier.
+- JSON is the reference v0 authoring syntax, with HTML/XML markup parsers and YAML/TOML/Pkl data parsers now normalizing to the same tree model.
 - HTML markup parsing now uses a fresh DOMDocument adapter, not the old draft `MarkupParser`.
+- JSON, YAML, TOML, and Pkl now share one native tag-key normalizer so future implementations can target the same fixtures and behavior.
+- Text-only HTML markup bypasses DOMDocument so libxml cannot inject an implicit `<p>`.
 - Explicit typed nodes normalize directly to value nodes.
 - `:props` and `:attributes` are resolved as parent modifiers, not rendered children.
 - Strict mode is the default.
@@ -73,6 +75,12 @@ Implemented:
 - `:import`, `:include`
 - import cache and circular import detection
 - DOMDocument-backed HTML markup parser
+- DOMDocument-backed XML parser entrypoints and XML emitter
+- shared native-data normalizer used by JSON, YAML, TOML, and Pkl
+- YAML parser and emitter through `symfony/yaml`
+- TOML parser and emitter through `devium/toml`
+- Pkl parser through `pkl eval --format=json` and a simple Pkl module emitter
+- text-only HTML parsing as string content
 - compact/tagged/canonical JSON export modes
 - comment, doctype, cdata, and raw text value handling
 - raw `script`/`style` HTML emission
@@ -96,16 +104,15 @@ Command:
 Result:
 
 ```text
-OK (33 tests, 47 assertions)
+OK (47 tests, 80 assertions)
 ```
 
 The old global XAMPP `phpunit` was not used because it is incompatible with PHP 8.4.
 
 ## Known Limitations
 
-- HTML parsing is implemented; JSON remains the only fully specified authoring syntax.
-- XML parser entrypoints exist through DOMDocument but do not yet have the same fixture depth as JSON/HTML.
-- No AML/YAML/Pkl parser is implemented yet.
+- YAML/TOML/Pkl parser behavior shares JSON tag-key semantics, but portable cross-language fixtures for all new formats should be expanded next.
+- XML parser entrypoints exist through DOMDocument but still need deeper XML-specific fixtures.
 - Source spans are JSON-pointer based, not byte/line-column based.
 - `:elseif` is reserved but not implemented.
 - Import slot handling is simple append behavior.
@@ -113,12 +120,15 @@ The old global XAMPP `phpunit` was not used because it is incompatible with PHP 
 - JSX output is JSX-like string output, not an AST.
 - No static-analysis tool is configured yet.
 - Compact JSON keeps whitespace text nodes by default, so it can be larger than minified HTML.
+- TOML and Pkl rendering require object/map roots; scalar/list roots fail clearly.
+- Pkl parsing depends on a local `pkl` CLI and should be used only for trusted local modules.
 
 ## Next Steps
 
 - Add a formal extension/plugin registry for runtime nodes.
 - Add `:elseif` and richer component slot semantics.
 - Add deeper XML fixtures and decide XML-specific emitter behavior.
+- Add shared fixtures for YAML/TOML/Pkl across PHP and future TypeScript implementations.
 - Add optional whitespace compaction for storage use cases that do not need exact text nodes.
 - Add schema emitter and PHP object mapper.
 - Add persistent import cache options.

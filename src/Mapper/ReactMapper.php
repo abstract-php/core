@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Mapper;
+namespace Abstract\Mapper;
 
-use AbstractLang\Exception\MappingException;
-use AbstractLang\Tree\Node;
+use Abstract\Exception\MappingException;
+use Abstract\Tree\Node;
 
 final class ReactMapper implements MapperInterface
 {

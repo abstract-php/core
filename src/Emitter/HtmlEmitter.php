@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace AbstractLang\Emitter;
+namespace Abstract\Emitter;
 
-use AbstractLang\Mapper\TargetNode;
+use Abstract\Mapper\TargetNode;
 
 final class HtmlEmitter implements EmitterInterface
 {
@@ -85,7 +85,7 @@ final class HtmlEmitter implements EmitterInterface
 
     private function escapeAttributeName(string $value): string
     {
-        return preg_replace('/[^A-Za-z0-9_:\\-.]/', '', $value) ?: '';
+        return preg_replace('/[^\p{L}\p{N}_:\\-.]/u', '', $value) ?: '';
     }
 
     private function doctype(string $value): string

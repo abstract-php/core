@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
 
-use AbstractLang\AbstractCore;
-use AbstractLang\Emitter\JsonEmitter;
-use AbstractLang\Parser\Markup\MarkupParseOptions;
-use AbstractLang\Tree\Node;
+use Abstract\AbstractCore;
+use Abstract\Emitter\JsonEmitter;
+use Abstract\Parser\Markup\MarkupParseOptions;
+use Abstract\Tree\Node;
 
 $sourcePath = example_path('big-html.html');
 $compactJsonPath = example_output_path('06-big-html.compact.json');
@@ -27,7 +27,7 @@ $compactJson = measure_example('compact_json_ms', $timings, static fn (): string
     pretty: false,
     mode: JsonEmitter::MODE_COMPACT,
 ));
-file_put_contents($compactJsonPath, $compactJson);
+example_write_output('06-big-html.compact.json', $compactJson);
 
 $jsonTree = measure_example('json_reparse_ms', $timings, static fn (): Node => $core->parseJson($compactJson, $compactJsonPath));
 $roundtripHtml = measure_example('html_emit_ms', $timings, static fn (): string => $core->renderHtml($jsonTree));
@@ -37,7 +37,7 @@ $roundtripTree = measure_example('roundtrip_reparse_ms', $timings, static fn ():
     new MarkupParseOptions(includeMeta: false),
 ));
 
-file_put_contents($roundtripHtmlPath, $roundtripHtml);
+example_write_output('06-big-html.roundtrip.html', $roundtripHtml);
 
 $sourceSize = filesize($sourcePath);
 $sourceSize = $sourceSize === false ? 0 : $sourceSize;
@@ -59,7 +59,7 @@ $report = [
     'memory_peak_bytes' => memory_get_peak_usage(true),
 ];
 
-file_put_contents($reportPath, json_encode($report, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+example_write_output('06-big-html.report.json', json_encode($report, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
 example_print('Big HTML Report', json_encode($report, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 

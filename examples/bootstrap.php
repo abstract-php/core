@@ -26,11 +26,31 @@ function example_path(string $path): string
 function example_output_path(string $path): string
 {
     $outputDir = example_path('output');
-    if (!is_dir($outputDir) && !mkdir($outputDir, 0775, true) && !is_dir($outputDir)) {
+    if (!is_dir($outputDir) && !@mkdir($outputDir, 0775, true) && !is_dir($outputDir)) {
         throw new RuntimeException(sprintf('Unable to create examples output directory "%s".', $outputDir));
     }
 
     return $outputDir . '/' . ltrim($path, '/');
+}
+
+function example_write_output(string $path, string $value): ?string
+{
+    $outputDir = example_path('output');
+    if (!is_dir($outputDir) && !@mkdir($outputDir, 0775, true) && !is_dir($outputDir)) {
+        return null;
+    }
+
+    $target = $outputDir . '/' . ltrim($path, '/');
+    $dir = dirname($target);
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+        return null;
+    }
+
+    if (!is_writable($dir)) {
+        return null;
+    }
+
+    return @file_put_contents($target, $value) === false ? null : $target;
 }
 
 function example_print(string $label, string $value): void

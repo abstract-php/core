@@ -5,7 +5,7 @@
     "license": "proprietary",
     "autoload": {
         "psr-4": {
-            "AbstractLang\\": "src/"
+            "Abstract\\": "src/"
         }
     },
     "authors": [
@@ -15,7 +15,9 @@
         }
     ],
     "require": {
-        "php": ">=8.2"
+        "php": ">=8.2",
+        "devium/toml": "^1.1",
+        "symfony/yaml": "^7.0"
     },
     "scripts": {
         "test": "@php vendor/bin/phpunit --configuration phpunit.xml",

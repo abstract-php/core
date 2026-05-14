@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
 
-use AbstractLang\AbstractCore;
+use Abstract\AbstractCore;
 
 $core = new AbstractCore();
 $tree = $core->parseJsonFile(example_path('03-runtime-dashboard.source.json'));
