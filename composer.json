@@ -1,11 +1,11 @@
 {
     "name": "abstracts/abstract",
-    "description": "Componential language using HTML-based syntax to access PHP class and method",
+    "description": "Spec-first, language-agnostic tree processor with a PHP v0 implementation.",
     "type": "library",
     "license": "proprietary",
     "autoload": {
         "psr-4": {
-            "Abstract\\": "src/"
+            "AbstractLang\\": "src/"
         }
     },
     "authors": [
@@ -15,11 +15,17 @@
         }
     ],
     "require": {
-        "symfony/polyfill": "^1.27",
-        "orchestra/parser": "^9.0",
-        "jwadhams/json-logic-php": "^1.5"
+        "php": ">=8.2"
+    },
+    "scripts": {
+        "test": "@php vendor/bin/phpunit --configuration phpunit.xml",
+        "bench": "@php benchmarks/core-benchmark.php",
+        "bench:markup": "@php benchmarks/markup-benchmark.php"
+    },
+    "config": {
+        "sort-packages": true
     },
     "require-dev": {
-        "composer/composer": "^1.10.22"
+        "phpunit/phpunit": "^11"
     }
 }

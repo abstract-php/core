@@ -1,0 +1,22 @@
+{
+  "main": [
+    {
+      ":import": "./components/Header.abstract.json"
+    },
+    {
+      ":import": {
+        "@": {
+          "src": "./components/Card.abstract.json",
+          "props": {
+            "title": "Welcome"
+          }
+        },
+        "#": [
+          {
+            "p": "This becomes slot content."
+          }
+        ]
+      }
+    }
+  ]
+}

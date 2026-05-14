@@ -1,9 +1,0 @@
-<:if>
-    <:scalar type="string">test</:scalar>
-    <:scalar>23</:scalar>
-    <:scalar>24</:scalar>
-</:if>
-<.string>123</.string>
-<:if>GOF</:if>
-<x:กรรม></x:กรรม>
-<:string ทดสอบ="20">123</:string>

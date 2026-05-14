@@ -1,0 +1,17 @@
+{
+  "kind": "element",
+  "name": "div",
+  "children": [
+    {
+      "kind": "value",
+      "type": "string",
+      "value": "hello",
+      "meta": {
+        "pointer": "/div"
+      }
+    }
+  ],
+  "meta": {
+    "pointer": "/div"
+  }
+}

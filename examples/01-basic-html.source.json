@@ -1,0 +1,16 @@
+{
+  "article": {
+    "@": {
+      "class": "card",
+      "data-kind": "example"
+    },
+    "#": [
+      {
+        "h1": "Hello Abstract"
+      },
+      {
+        "p": "JSON tag-key syntax rendered as HTML."
+      }
+    ]
+  }
+}

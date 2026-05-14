@@ -1,0 +1,13 @@
+{
+  "user": {
+    "role": "admin"
+  },
+  "tasks": [
+    {
+      "label": "Review imports"
+    },
+    {
+      "label": "Publish dashboard"
+    }
+  ]
+}

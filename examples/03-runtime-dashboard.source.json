@@ -1,0 +1,60 @@
+{
+  "main": {
+    "@": {
+      "class": "dashboard"
+    },
+    "#": [
+      {
+        ":if": {
+          "@": {
+            "test": {
+              ":expr": {
+                "==": [
+                  {
+                    "var": "user.role"
+                  },
+                  "admin"
+                ]
+              }
+            }
+          },
+          "#": [
+            {
+              "h1": "Admin Dashboard"
+            },
+            {
+              "ul": [
+                {
+                  ":each": {
+                    "@": {
+                      "items": {
+                        ":expr": {
+                          "var": "tasks"
+                        }
+                      },
+                      "as": "task"
+                    },
+                    "#": [
+                      {
+                        "li": {
+                          ":expr": {
+                            "var": "task.label"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          ":else": [
+            {
+              "p": "Please sign in with an admin account."
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

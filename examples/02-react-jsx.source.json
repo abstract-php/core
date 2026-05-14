@@ -1,0 +1,15 @@
+{
+  "ProductCard": {
+    "@": {
+      "class": "featured",
+      "title": "Starter Pack",
+      "price": 42,
+      "available": true
+    },
+    "#": [
+      {
+        "span": "Starter Pack"
+      }
+    ]
+  }
+}
