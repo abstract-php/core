@@ -14,6 +14,7 @@ php examples/07-xml-roundtrip.mapper.php
 php examples/08-yaml-runtime.mapper.php
 php examples/09-toml-storage.mapper.php
 php examples/10-pkl-runtime.mapper.php
+php examples/11-custom-render-targets.mapper.php
 ```
 
 ## Scenarios
@@ -29,5 +30,6 @@ php examples/10-pkl-runtime.mapper.php
 - `08-yaml-runtime.*`: YAML tag-key source with runtime logic rendered to HTML and YAML.
 - `09-toml-storage.*`: TOML table source used as compact storage and rendered to HTML/TOML.
 - `10-pkl-runtime.*`: Pkl module parsed through the Pkl CLI, resolved with context, and rendered back to Pkl.
+- `11-custom-render-targets.*`: target-aware custom HTML and JSX mapping for the same Abstract source.
 
 Generated files are written to `examples/output/` and ignored by git. When examples are opened through a local web server that cannot write to that directory, saving is skipped and the example still prints its result.

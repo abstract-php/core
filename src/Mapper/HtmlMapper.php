@@ -15,35 +15,57 @@ final class HtmlMapper implements MapperInterface
         'style' => true,
     ];
 
-    public function __construct(private readonly bool $strict = true)
-    {
+    /** @var array<string, HtmlElementMapping> */
+    private readonly array $elements;
+
+    /**
+     * @param array<string, HtmlElementMapping> $elements
+     */
+    public function __construct(
+        private readonly bool $strict = true,
+        array $elements = [],
+    ) {
+        $this->elements = $elements;
     }
 
-    public function map(Node $node): TargetNode
+    public static function make(bool $strict = true): self
     {
-        return $this->mapNode($node, null);
+        return new self($strict);
     }
 
-    private function mapNode(Node $node, ?string $parentElement): TargetNode
+    public function element(string $name, HtmlElementMapping $mapping): self
+    {
+        $elements = $this->elements;
+        $elements[$name] = $mapping;
+        return new self($this->strict, $elements);
+    }
+
+    public function map(Node $node, ?MappingContext $context = null): TargetNode
+    {
+        return $this->mapNode($node, null, $context);
+    }
+
+    private function mapNode(Node $node, ?string $parentElement, ?MappingContext $context): TargetNode
     {
         return match ($node->kind) {
-            Node::FRAGMENT => TargetNode::fragment(array_map(fn (Node $child): TargetNode => $this->mapNode($child, null), $node->children)),
-            Node::ELEMENT => $this->mapElement($node),
+            Node::FRAGMENT => TargetNode::fragment(array_map(fn (Node $child): TargetNode => $this->mapNode($child, null, $context), $node->children)),
+            Node::ELEMENT => $this->mapElement($node, $context),
             Node::VALUE => $this->mapValue($node, $parentElement),
-            Node::RUNTIME => $this->handleRuntime($node),
+            Node::RUNTIME => $this->handleRuntime($node, $context),
             default => throw new MappingException(sprintf('HTML mapper cannot map node kind "%s".', $node->kind)),
         };
     }
 
-    private function mapElement(Node $node): TargetNode
+    private function mapElement(Node $node, ?MappingContext $context): TargetNode
     {
         $name = (string) $node->name;
-        $parentName = strtolower($name);
+        $mappedName = $this->elements[$name]->tag ?? $name;
+        $parentName = strtolower($mappedName);
 
         return TargetNode::element(
-            $name,
+            $mappedName,
             $node->props,
-            array_map(fn (Node $child): TargetNode => $this->mapNode($child, $parentName), $node->children),
+            array_map(fn (Node $child): TargetNode => $this->mapNode($child, $parentName, $context), $node->children),
         );
     }
 
@@ -64,9 +86,9 @@ final class HtmlMapper implements MapperInterface
         return TargetNode::text($this->stringify($node->value));
     }
 
-    private function handleRuntime(Node $node): TargetNode
+    private function handleRuntime(Node $node, ?MappingContext $context): TargetNode
     {
-        if ($this->strict) {
+        if ($context?->strict ?? $this->strict) {
             throw new MappingException(sprintf('HTML mapper received unresolved runtime node ":%s".', $node->name));
         }
         return TargetNode::fragment([]);

@@ -29,3 +29,19 @@ Before changing behavior:
 
 Never silently ignore unresolved runtime nodes in strict mode.
 Never add unsafe code execution by default.
+
+## Custom mapping is core-level, not React-only
+
+Abstract supports target-aware custom mapping.
+
+React component mapping is only one example. The core architecture should allow custom mapping for different render targets such as HTML, JSX, XML, and future targets.
+
+Rules:
+- AbstractCore should provide convenient default methods like `renderHtml()` and `renderJsx()`.
+- Default render methods should use configurable render targets internally.
+- Developers should be able to replace or configure target mappers.
+- ReactMapper may support component mapping and import generation.
+- HtmlMapper may support element/tag mapping.
+- Emitters serialize mapped output; they should not parse Abstract source or resolve runtime nodes.
+- Runtime nodes beginning with `:` should be resolved before final mapping.
+- Headless UI is an example only, never a hardcoded dependency.

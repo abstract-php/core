@@ -22,6 +22,7 @@ Abstract Core v0 currently supports:
 - compact, tagged, and canonical JSON tree export
 - strict and loose runtime modes
 - HTML, XML, YAML, TOML, Pkl, and JSX-like output pipelines
+- target-aware custom render targets and mapper overrides
 - shared JSON fixtures and PHPUnit coverage
 - benchmark scripts for JSON core flows and large HTML roundtrips
 
@@ -236,6 +237,93 @@ Available render methods:
 
 YAML supports scalar, list, and map roots. TOML and Pkl rendering require object/map roots because their module/document syntax is property-oriented. Pkl parsing uses the local `pkl` CLI with `eval --format=json --no-project --root-dir`; it is an explicit parser path for trusted local config modules, not implicit code execution.
 
+## Custom Render Targets
+
+`AbstractCore` is a facade over parsers, runtime resolution, render targets, and tree serializers. `renderHtml()`, `renderJsx()`, and `renderXml()` use registered render targets internally, and `render($target, ...)` can call a target by name.
+
+Custom mapping is target-aware. A JSX override does not affect HTML, and an HTML override does not affect JSX.
+
+Custom JSX mapping:
+
+```php
+use Abstract\AbstractCore;
+use Abstract\Emitter\JsxEmitter;
+use Abstract\Mapper\ReactComponent;
+use Abstract\Mapper\ReactMapper;
+use Abstract\Render\RenderTarget;
+
+$core = AbstractCore::default()
+    ->withRenderTarget('jsx', RenderTarget::make(
+        ReactMapper::make()
+            ->component('input', ReactComponent::imported(
+                source: '@headlessui/react',
+                export: 'Input',
+                as: 'HeadlessInput',
+            )),
+        new JsxEmitter(),
+    ));
+
+echo $core->renderJsx($tree);
+```
+
+Output:
+
+```jsx
+import { Input as HeadlessInput } from "@headlessui/react";
+
+<HeadlessInput name="email" />
+```
+
+Custom HTML mapping:
+
+```php
+use Abstract\AbstractCore;
+use Abstract\Emitter\HtmlEmitter;
+use Abstract\Mapper\HtmlElementMapping;
+use Abstract\Mapper\HtmlMapper;
+use Abstract\Render\RenderTarget;
+
+$core = AbstractCore::default()
+    ->withRenderTarget('html', RenderTarget::make(
+        HtmlMapper::make()
+            ->element('input', HtmlElementMapping::tag('x-input')),
+        new HtmlEmitter(),
+    ));
+
+echo $core->renderHtml($tree);
+```
+
+Output:
+
+```html
+<x-input name="email"></x-input>
+```
+
+Config-driven customization is also available for simple JSX components and HTML tag replacement:
+
+```php
+$core = AbstractCore::fromConfig([
+    'targets' => [
+        'jsx' => [
+            'components' => [
+                'input' => [
+                    'source' => '@headlessui/react',
+                    'export' => 'Input',
+                    'as' => 'HeadlessInput',
+                ],
+            ],
+        ],
+        'html' => [
+            'elements' => [
+                'input' => ['tag' => 'x-input'],
+            ],
+        ],
+    ],
+]);
+```
+
+YAML, TOML, Pkl, and `treeJson()` currently serialize resolved Abstract Tree data directly. They remain configurable through their render methods and may gain dedicated mappers later.
+
 ## Tests
 
 ```bash
@@ -245,7 +333,7 @@ YAML supports scalar, list, and map roots. TOML and Pkl rendering require object
 Current verified result:
 
 ```text
-OK (47 tests, 80 assertions)
+OK (53 tests, 87 assertions)
 ```
 
 ## Benchmarks
@@ -259,7 +347,7 @@ Benchmark results are recorded in [PERFORMANCE.md](PERFORMANCE.md).
 
 ## Examples
 
-Runnable examples live in [examples/](examples/). They include JSON-to-HTML, React/JSX mapping, runtime logic, imports, text-only markup, XML/YAML/TOML/Pkl scenarios, a small HTML roundtrip, and a large `examples/big-html.html` roundtrip that writes compact JSON and HTML output under `examples/output/`.
+Runnable examples live in [examples/](examples/). They include JSON-to-HTML, React/JSX mapping, runtime logic, imports, text-only markup, XML/YAML/TOML/Pkl scenarios, custom render targets, a small HTML roundtrip, and a large `examples/big-html.html` roundtrip that writes compact JSON and HTML output under `examples/output/`.
 
 ## Documentation
 

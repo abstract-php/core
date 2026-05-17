@@ -9,19 +9,86 @@ use Abstract\Tree\Node;
 
 final class ReactMapper implements MapperInterface
 {
-    public function __construct(private readonly bool $strict = true)
-    {
+    /** @var array<string, ReactComponent> */
+    private readonly array $components;
+
+    /**
+     * @param array<string, ReactComponent> $components
+     */
+    public function __construct(
+        private readonly bool $strict = true,
+        array $components = [],
+    ) {
+        $this->components = $components;
     }
 
-    public function map(Node $node): TargetNode
+    public static function make(bool $strict = true): self
+    {
+        return new self($strict);
+    }
+
+    public function component(string $name, ReactComponent $component): self
+    {
+        $components = $this->components;
+        $components[$name] = $component;
+        return new self($this->strict, $components);
+    }
+
+    public function map(Node $node, ?MappingContext $context = null): JsxDocument
+    {
+        $imports = [];
+        $root = $this->mapNode($node, $context, $imports);
+
+        return new JsxDocument($root, array_values($imports));
+    }
+
+    /**
+     * @param array<string, ReactImport> $imports
+     */
+    private function mapNode(Node $node, ?MappingContext $context, array &$imports): TargetNode
     {
         return match ($node->kind) {
-            Node::FRAGMENT => TargetNode::fragment(array_map(fn (Node $child): TargetNode => $this->map($child), $node->children)),
-            Node::ELEMENT => TargetNode::element((string) $node->name, $this->mapProps($node->props), array_map(fn (Node $child): TargetNode => $this->map($child), $node->children)),
+            Node::FRAGMENT => TargetNode::fragment($this->mapChildren($node->children, $context, $imports)),
+            Node::ELEMENT => $this->mapElement($node, $context, $imports),
             Node::VALUE => $this->mapValue($node),
-            Node::RUNTIME => $this->handleRuntime($node),
+            Node::RUNTIME => $this->handleRuntime($node, $context),
             default => throw new MappingException(sprintf('React mapper cannot map node kind "%s".', $node->kind)),
         };
+    }
+
+    /**
+     * @param array<string, ReactImport> $imports
+     */
+    private function mapElement(Node $node, ?MappingContext $context, array &$imports): TargetNode
+    {
+        $name = (string) $node->name;
+        $component = $this->components[$name] ?? null;
+        if ($component instanceof ReactComponent) {
+            $name = $component->name;
+            if ($component->import instanceof ReactImport) {
+                $imports[$component->import->key()] = $component->import;
+            }
+        }
+
+        return TargetNode::element(
+            $name,
+            $this->mapProps($node->props),
+            $this->mapChildren($node->children, $context, $imports),
+        );
+    }
+
+    /**
+     * @param list<Node> $children
+     * @param array<string, ReactImport> $imports
+     * @return list<TargetNode>
+     */
+    private function mapChildren(array $children, ?MappingContext $context, array &$imports): array
+    {
+        $mapped = [];
+        foreach ($children as $child) {
+            $mapped[] = $this->mapNode($child, $context, $imports);
+        }
+        return $mapped;
     }
 
     private function mapValue(Node $node): TargetNode
@@ -54,9 +121,9 @@ final class ReactMapper implements MapperInterface
         return $props;
     }
 
-    private function handleRuntime(Node $node): TargetNode
+    private function handleRuntime(Node $node, ?MappingContext $context): TargetNode
     {
-        if ($this->strict) {
+        if ($context?->strict ?? $this->strict) {
             throw new MappingException(sprintf('React mapper received unresolved runtime node ":%s".', $node->name));
         }
         return TargetNode::fragment([]);

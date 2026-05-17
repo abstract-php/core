@@ -25,12 +25,12 @@ Environment from the latest run:
 
 | Benchmark | Iterations | Total ms | Mean us | Peak MB |
 | --- | ---: | ---: | ---: | ---: |
-| json_decode only | 1000 | 1.875 | 1.875 | 4 |
-| parse + normalize | 1000 | 13.033 | 13.033 | 4 |
-| parse + normalize + resolve runtime | 1000 | 33.927 | 33.927 | 4 |
-| parse + normalize + resolve + map to HTML | 1000 | 52.751 | 52.751 | 4 |
-| import resolve cold cache | 1 | 0.219 | 219.125 | 4 |
-| import resolve warm cache | 100 | 3.330 | 33.303 | 4 |
+| json_decode only | 1000 | 1.877 | 1.877 | 4 |
+| parse + normalize | 1000 | 12.775 | 12.775 | 4 |
+| parse + normalize + resolve runtime | 1000 | 32.433 | 32.433 | 4 |
+| parse + normalize + resolve + map to HTML | 1000 | 52.289 | 52.289 | 4 |
+| import resolve cold cache | 1 | 0.102 | 102.250 | 4 |
+| import resolve warm cache | 100 | 3.081 | 30.815 | 4 |
 
 ## Big HTML Markup Results
 
@@ -44,12 +44,12 @@ Generated files are written to `benchmarks/output/`, which is ignored by git:
 
 | Benchmark | Time ms |
 | --- | ---: |
-| DOM parse only | 3.545 |
-| parse + normalize | 7.189 |
-| compact JSON export | 1.927 |
-| compact JSON reparse | 3.698 |
-| HTML emit | 1.550 |
-| output reparse for comparison | 6.892 |
+| DOM parse only | 3.235 |
+| parse + normalize | 6.195 |
+| compact JSON export | 1.633 |
+| compact JSON reparse | 3.520 |
+| HTML emit | 1.525 |
+| output reparse for comparison | 6.829 |
 
 | Artifact | Size |
 | --- | ---: |

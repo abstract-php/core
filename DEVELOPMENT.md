@@ -59,6 +59,7 @@ src/
   Parser/Pkl/             pkl CLI JSON bridge + native normalizer
   Runtime/                runtime node resolver and expression evaluator
   Mapper/                 target model mapping
+  Render/                 render target registry and target facade objects
   Emitter/                output serializers
   Exception/              project exception types
 
@@ -152,6 +153,14 @@ Node -> HtmlMapper/ReactMapper -> TargetNode -> Emitter
 For storage/config output, use `JsonEmitter::toData()` to turn a resolved tree into `canonical`, `compact`, or `tagged` data, then serialize that data.
 
 Strict mappers should reject unresolved runtime nodes. Loose mappers may drop them only when safe.
+
+Register mapper/emitter pairs through `RenderTarget` when they should be available from `AbstractCore::render()` or a convenience method. Keep target-specific behavior inside target-specific mappers:
+
+- HTML tag replacement belongs in `HtmlMapper`.
+- React component/import mapping belongs in `ReactMapper` and `JsxEmitter`.
+- `AbstractCore` should only resolve runtime nodes and dispatch to the configured target.
+
+YAML, TOML, Pkl, and `treeJson()` currently serialize resolved tree data directly. Do not add fake mappers for them unless the target starts needing target-specific meaning.
 
 ## Fixtures And Tests
 

@@ -29,6 +29,7 @@ src/
   Parser/Pkl/
   Runtime/
   Mapper/
+  Render/
   Emitter/
   Exception/
 ```
@@ -107,13 +108,18 @@ Imports resolve relative to the current source file. The resolver caches importe
 
 Circular imports are detected with an import stack and reported as strict errors.
 
-## Mappers And Emitters
+## Render Targets, Mappers, And Emitters
+
+`RenderTarget` pairs a mapper with an emitter. `RenderTargetRegistry` stores target names such as `html`, `jsx`, and `xml`. `AbstractCore::render()` resolves runtime nodes, fetches the target, creates a `MappingContext`, maps the tree, then emits the mapped result.
+
+`renderHtml()`, `renderJsx()`, and `renderXml()` are convenience wrappers over registered targets. Built-in targets can be replaced with `withRenderTarget()`, and simple HTML/JSX mapping can be configured with `fromConfig()` or `withConfig()`.
 
 `HtmlMapper` and `ReactMapper` produce target nodes. `HtmlEmitter`, `XmlEmitter`, and `JsxEmitter` serialize those target nodes. JSON/YAML/TOML/Pkl emitters serialize the resolved Abstract Tree through compact/tagged/canonical data modes.
 
 HTML output:
 
 - element nodes become tags
+- custom `HtmlElementMapping` entries can replace tags, for example `input` -> `x-input`
 - value nodes become escaped text
 - `comment`, `doctype`, and raw values emit through dedicated target nodes
 - false/null attributes are omitted
@@ -123,6 +129,9 @@ HTML output:
 
 JSX output:
 
+- default native JSX mapping works without configuration
+- custom `ReactComponent` mappings can replace Abstract element names with local or imported components
+- imports are collected into a `JsxDocument` and deduplicated before emission
 - `class` maps to `className` when `className` is not already present
 - scalar props use JSX-safe output
 - text escapes JSX-sensitive characters
@@ -139,6 +148,7 @@ YAML/TOML/Pkl output:
 - runtime resolution runs first through `AbstractCore`
 - compact mode is the default serialized data shape
 - TOML and Pkl require object/map roots
+- these tree serializers are not forced through fake mappers in v0
 
 ## Performance Strategy
 

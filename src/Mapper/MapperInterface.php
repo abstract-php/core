@@ -8,5 +8,5 @@ use Abstract\Tree\Node;
 
 interface MapperInterface
 {
-    public function map(Node $node): TargetNode;
+    public function map(Node $node, ?MappingContext $context = null): mixed;
 }

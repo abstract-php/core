@@ -12,12 +12,15 @@ use Abstract\Exception\ImportException;
 use Abstract\Exception\MappingException;
 use Abstract\Exception\ParseException;
 use Abstract\Exception\RuntimeResolutionException;
+use Abstract\Mapper\HtmlElementMapping;
 use Abstract\Mapper\HtmlMapper;
+use Abstract\Mapper\ReactComponent;
 use Abstract\Mapper\ReactMapper;
 use Abstract\Parser\Json\JsonTagParser;
 use Abstract\Parser\Markup\DomMarkupParser;
 use Abstract\Parser\Markup\MarkupParseOptions;
 use Abstract\Parser\Pkl\PklTagParser;
+use Abstract\Render\RenderTarget;
 use Abstract\Runtime\RuntimeResolver;
 use Abstract\Tree\Node;
 use PHPUnit\Framework\TestCase;
@@ -522,6 +525,100 @@ PKL);
         self::assertSame($emitter->toData($json, JsonEmitter::MODE_COMPACT), $emitter->toData($yaml, JsonEmitter::MODE_COMPACT));
         self::assertSame($emitter->toData($json, JsonEmitter::MODE_COMPACT), $emitter->toData($toml, JsonEmitter::MODE_COMPACT));
         self::assertSame($emitter->toData($json, JsonEmitter::MODE_COMPACT), $emitter->toData($pkl, JsonEmitter::MODE_COMPACT));
+    }
+
+    public function testGenericRenderUsesDefaultHtmlTarget(): void
+    {
+        $tree = $this->parser->parseString('{"div":"Hello"}');
+
+        self::assertSame('<div>Hello</div>', $this->core->render('html', $tree));
+    }
+
+    public function testDefaultJsxInputRemainsNativeWithoutCustomMapping(): void
+    {
+        $tree = $this->parser->parseString('{"input":[{":props":{"type":"text","name":"email"}}]}');
+
+        self::assertSame('<input type="text" name="email" />', $this->core->renderJsx($tree));
+    }
+
+    public function testAbstractCoreCanUseCustomHtmlMapper(): void
+    {
+        $core = AbstractCore::default()->withRenderTarget('html', RenderTarget::make(
+            HtmlMapper::make()->element('input', HtmlElementMapping::tag('x-input')),
+            new HtmlEmitter(),
+        ));
+        $tree = $core->parseJson('{"input":[{":props":{"type":"text","name":"email"}}, "Child"]}');
+
+        self::assertSame('<x-input type="text" name="email">Child</x-input>', $core->renderHtml($tree));
+    }
+
+    public function testAbstractCoreCanUseCustomReactMapperWithImports(): void
+    {
+        $core = AbstractCore::default()->withRenderTarget('jsx', RenderTarget::make(
+            ReactMapper::make()->component('input', ReactComponent::imported(
+                source: '@headlessui/react',
+                export: 'Input',
+                as: 'HeadlessInput',
+            )),
+            new JsxEmitter(),
+        ));
+        $tree = $core->parseJson('{"input":[{":props":{"type":"text","name":"email","className":"border"}}]}');
+
+        self::assertSame(
+            'import { Input as HeadlessInput } from "@headlessui/react";' . "\n\n" . '<HeadlessInput type="text" name="email" className="border" />',
+            $core->renderJsx($tree),
+        );
+    }
+
+    public function testCustomReactNamespacedMappingAndImportDeduplication(): void
+    {
+        $component = ReactComponent::imported(
+            source: '@headlessui/react',
+            export: 'Input',
+            as: 'HeadlessInput',
+        );
+        $core = AbstractCore::default()->withRenderTarget('jsx', RenderTarget::make(
+            ReactMapper::make()
+                ->component('input', $component)
+                ->component('ui.input', $component),
+            new JsxEmitter(),
+        ));
+        $tree = $core->parseJson('[{"input":[{":props":{"name":"email"}}]},{"ui.input":[{":props":{"name":"phone"}}]}]');
+
+        self::assertSame(
+            'import { Input as HeadlessInput } from "@headlessui/react";' . "\n\n" . '<HeadlessInput name="email" /><HeadlessInput name="phone" />',
+            $core->renderJsx($tree),
+        );
+    }
+
+    public function testConfigDrivenTargetCustomization(): void
+    {
+        $core = AbstractCore::fromConfig([
+            'targets' => [
+                'html' => [
+                    'elements' => [
+                        'input' => ['tag' => 'x-input'],
+                    ],
+                ],
+                'jsx' => [
+                    'components' => [
+                        'input' => [
+                            'source' => '@headlessui/react',
+                            'export' => 'Input',
+                            'as' => 'HeadlessInput',
+                            'importKind' => 'named',
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $tree = $core->parseJson('{"input":[{":props":{"name":"email"}}]}');
+
+        self::assertSame('<x-input name="email"></x-input>', $core->renderHtml($tree));
+        self::assertSame(
+            'import { Input as HeadlessInput } from "@headlessui/react";' . "\n\n" . '<HeadlessInput name="email" />',
+            $core->renderJsx($tree),
+        );
     }
 
     private function skipWhenPklIsMissing(): void

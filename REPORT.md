@@ -58,6 +58,7 @@ Major replacements:
 - The core logic evaluator is implemented locally to avoid a dependency and to keep the initial operator set small and auditable.
 - Compact JSON is the storage-oriented export format. Canonical JSON remains the full internal tree format.
 - Markup roundtrip validation is structural rather than byte-for-byte because DOMDocument and emitters normalize formatting and void tags.
+- `AbstractCore` is now a configurable facade over render targets; React component mapping and HTML tag mapping are target-specific mapper behavior, not special facade logic.
 
 ## Implementation Summary
 
@@ -85,6 +86,11 @@ Implemented:
 - comment, doctype, cdata, and raw text value handling
 - raw `script`/`style` HTML emission
 - large HTML roundtrip benchmark with structural fingerprint comparison
+- configurable `RenderTarget` and `RenderTargetRegistry`
+- generic `AbstractCore::render()` plus convenience wrappers
+- `MappingContext` for strict mode, target name, runtime context, and future options
+- target-aware custom JSX component mapping with import deduplication
+- target-aware custom HTML tag replacement
 - HTML mapper/emitter
 - React/JSX mapper/emitter
 - JSON tree emitter
@@ -104,7 +110,7 @@ Command:
 Result:
 
 ```text
-OK (47 tests, 80 assertions)
+OK (53 tests, 87 assertions)
 ```
 
 The old global XAMPP `phpunit` was not used because it is incompatible with PHP 8.4.
@@ -118,6 +124,8 @@ The old global XAMPP `phpunit` was not used because it is incompatible with PHP 
 - Import slot handling is simple append behavior.
 - Payload code nodes are not emitted by a specialized code emitter yet.
 - JSX output is JSX-like string output, not an AST.
+- HTML custom mapping currently supports simple tag replacement; callback/prop/children transforms are future extension points.
+- Config-driven customization currently covers simple JSX imported components and HTML tag replacement.
 - No static-analysis tool is configured yet.
 - Compact JSON keeps whitespace text nodes by default, so it can be larger than minified HTML.
 - TOML and Pkl rendering require object/map roots; scalar/list roots fail clearly.

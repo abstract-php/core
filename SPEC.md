@@ -205,17 +205,27 @@ Supported forms:
 
 Circular imports and missing imports are strict errors.
 
-## Mapper And Emitter Model
+## Render Targets, Mappers, And Emitters
 
-Mappers decide target meaning. Emitters serialize mapped target nodes.
+Render targets connect a target-aware mapper to an emitter. Mappers decide target meaning. Emitters serialize mapped results.
 
 PHP v0 includes:
 
 - `HtmlMapper` + `HtmlEmitter`
 - `ReactMapper` + `JsxEmitter`
+- `HtmlMapper` + `XmlEmitter`
 - `JsonEmitter` for tree inspection
 
 Runtime nodes should be resolved before final mapping. Mappers reject unresolved runtime nodes in strict mode.
+
+Custom mapping is target-aware:
+
+- HTML element mappings can rename element tags, for example `input` -> `x-input`.
+- React mappings can map Abstract element names to local or imported JSX components.
+- JSX imports are collected by the React mapper and deduplicated by the JSX document/emitter layer.
+- A JSX mapping does not change HTML output, and an HTML mapping does not change JSX output.
+
+Unknown normal elements remain generic by default. Custom mapping overrides default behavior for the configured target only.
 
 ## Markup Source Syntax
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Abstract\Emitter;
 
+use Abstract\Exception\MappingException;
 use Abstract\Mapper\TargetNode;
 
 final class HtmlEmitter implements EmitterInterface
@@ -26,10 +27,19 @@ final class HtmlEmitter implements EmitterInterface
         'wbr' => true,
     ];
 
-    public function emit(TargetNode $node): string
+    public function emit(mixed $node): string
+    {
+        if (!$node instanceof TargetNode) {
+            throw new MappingException('HTML emitter expects a mapped TargetNode.');
+        }
+
+        return $this->emitNode($node);
+    }
+
+    private function emitNode(TargetNode $node): string
     {
         return match ($node->kind) {
-            TargetNode::FRAGMENT => implode('', array_map(fn (TargetNode $child): string => $this->emit($child), $node->children)),
+            TargetNode::FRAGMENT => implode('', array_map(fn (TargetNode $child): string => $this->emitNode($child), $node->children)),
             TargetNode::TEXT => $this->escapeText((string) $node->value),
             TargetNode::RAW_TEXT => (string) $node->value,
             TargetNode::COMMENT => '<!--' . (string) $node->value . '-->',
@@ -47,7 +57,7 @@ final class HtmlEmitter implements EmitterInterface
             return '<' . $name . $attrs . '>';
         }
         return '<' . $name . $attrs . '>'
-            . implode('', array_map(fn (TargetNode $child): string => $this->emit($child), $node->children))
+            . implode('', array_map(fn (TargetNode $child): string => $this->emitNode($child), $node->children))
             . '</' . $name . '>';
     }
 

@@ -1,0 +1,11 @@
+{
+  "input": [
+    {
+      ":props": {
+        "type": "text",
+        "name": "email",
+        "className": "border"
+      }
+    }
+  ]
+}

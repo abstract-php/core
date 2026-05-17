@@ -4,14 +4,24 @@ declare(strict_types=1);
 
 namespace Abstract\Emitter;
 
+use Abstract\Exception\MappingException;
 use Abstract\Mapper\TargetNode;
 
 final class XmlEmitter implements EmitterInterface
 {
-    public function emit(TargetNode $node): string
+    public function emit(mixed $node): string
+    {
+        if (!$node instanceof TargetNode) {
+            throw new MappingException('XML emitter expects a mapped TargetNode.');
+        }
+
+        return $this->emitNode($node);
+    }
+
+    private function emitNode(TargetNode $node): string
     {
         return match ($node->kind) {
-            TargetNode::FRAGMENT => implode('', array_map(fn (TargetNode $child): string => $this->emit($child), $node->children)),
+            TargetNode::FRAGMENT => implode('', array_map(fn (TargetNode $child): string => $this->emitNode($child), $node->children)),
             TargetNode::TEXT, TargetNode::RAW_TEXT => $this->escapeText((string) $node->value),
             TargetNode::COMMENT => '<!--' . $this->comment((string) $node->value) . '-->',
             TargetNode::DOCTYPE => '<!DOCTYPE ' . $this->doctype((string) $node->value) . '>',
@@ -24,7 +34,7 @@ final class XmlEmitter implements EmitterInterface
     {
         $name = (string) $node->name;
         return '<' . $name . $this->attributes($node->props) . '>'
-            . implode('', array_map(fn (TargetNode $child): string => $this->emit($child), $node->children))
+            . implode('', array_map(fn (TargetNode $child): string => $this->emitNode($child), $node->children))
             . '</' . $name . '>';
     }
 

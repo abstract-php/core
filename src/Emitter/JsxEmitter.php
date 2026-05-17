@@ -4,14 +4,44 @@ declare(strict_types=1);
 
 namespace Abstract\Emitter;
 
+use Abstract\Exception\MappingException;
+use Abstract\Mapper\JsxDocument;
 use Abstract\Mapper\TargetNode;
 
 final class JsxEmitter implements EmitterInterface
 {
-    public function emit(TargetNode $node): string
+    public function emit(mixed $node): string
+    {
+        if ($node instanceof JsxDocument) {
+            return $this->emitDocument($node);
+        }
+
+        if (!$node instanceof TargetNode) {
+            throw new MappingException('JSX emitter expects a mapped TargetNode or JSX document.');
+        }
+
+        return $this->emitNode($node);
+    }
+
+    private function emitDocument(JsxDocument $document): string
+    {
+        $body = $this->emitNode($document->root);
+        if ($document->imports === []) {
+            return $body;
+        }
+
+        $statements = [];
+        foreach ($document->imports as $import) {
+            $statements[$import->key()] = $import->statement();
+        }
+
+        return implode("\n", $statements) . "\n\n" . $body;
+    }
+
+    private function emitNode(TargetNode $node): string
     {
         return match ($node->kind) {
-            TargetNode::FRAGMENT => implode('', array_map(fn (TargetNode $child): string => $this->emit($child), $node->children)),
+            TargetNode::FRAGMENT => implode('', array_map(fn (TargetNode $child): string => $this->emitNode($child), $node->children)),
             TargetNode::TEXT => $this->escapeText((string) $node->value),
             TargetNode::RAW_TEXT => (string) $node->value,
             TargetNode::COMMENT => '{/*' . $this->escapeComment((string) $node->value) . '*/}',
@@ -29,7 +59,7 @@ final class JsxEmitter implements EmitterInterface
             return '<' . $name . $props . ' />';
         }
         return '<' . $name . $props . '>'
-            . implode('', array_map(fn (TargetNode $child): string => $this->emit($child), $node->children))
+            . implode('', array_map(fn (TargetNode $child): string => $this->emitNode($child), $node->children))
             . '</' . $name . '>';
     }
 
