@@ -53,6 +53,7 @@ final class JsonEmitter
             Node::ELEMENT => $this->compactElement($node),
             Node::RUNTIME => $this->compactRuntime($node),
             Node::VALUE => $this->compactValue($node, $parentName),
+            Node::LOGIC => [':logic:' . $node->op => $this->logicArgs($node, self::MODE_COMPACT)],
             default => null,
         };
     }
@@ -109,6 +110,7 @@ final class JsonEmitter
             Node::ELEMENT => $this->taggedElement($node),
             Node::RUNTIME => [':' . $node->name => $this->runtimeBody($node, self::MODE_TAGGED)],
             Node::VALUE => [':' . ($node->type === 'string' ? 'string' : $node->type) => $node->value],
+            Node::LOGIC => [':logic:' . $node->op => $this->logicArgs($node, self::MODE_TAGGED)],
             default => null,
         };
     }
@@ -150,6 +152,16 @@ final class JsonEmitter
         }
 
         return $body;
+    }
+
+    private function logicArgs(Node $node, string $mode): mixed
+    {
+        $args = array_map(
+            fn (Node $arg): mixed => $mode === self::MODE_TAGGED ? $this->taggedNode($arg) : $this->compactNode($arg),
+            $node->args,
+        );
+
+        return $node->op === 'var' && count($args) === 1 ? $args[0] : $args;
     }
 
     /**

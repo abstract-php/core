@@ -8,6 +8,8 @@ use Abstract\Emitter\HtmlEmitter;
 use Abstract\Emitter\JsonEmitter;
 use Abstract\Emitter\JsxEmitter;
 use Abstract\Emitter\PklEmitter;
+use Abstract\Emitter\AmlEmitter;
+use Abstract\Emitter\SourceSerializer;
 use Abstract\Emitter\TomlEmitter;
 use Abstract\Emitter\XmlEmitter;
 use Abstract\Emitter\YamlEmitter;
@@ -105,9 +107,12 @@ final class AbstractCore
         return $core;
     }
 
-    public function parseJson(string $json, ?string $source = null): Node
+    /**
+     * @param list<array{level: string, message: string}>|null $diagnostics
+     */
+    public function parseJson(string $json, ?string $source = null, bool $strict = true, ?array &$diagnostics = null): Node
     {
-        return $this->parser->parseString($json, $source);
+        return $this->parser->parseString($json, $source, $strict, $diagnostics);
     }
 
     public function parseJsonFile(string $path): Node
@@ -123,6 +128,16 @@ final class AbstractCore
     public function parseHtmlFile(string $path, ?MarkupParseOptions $options = null): Node
     {
         return (new DomMarkupParser())->parseHtmlFile($path, $options);
+    }
+
+    public function parseAml(string $aml, ?string $source = null, ?MarkupParseOptions $options = null): Node
+    {
+        return (new DomMarkupParser())->parseAmlString($aml, $source, $options);
+    }
+
+    public function parseAmlFile(string $path, ?MarkupParseOptions $options = null): Node
+    {
+        return (new DomMarkupParser())->parseAmlFile($path, $options);
     }
 
     public function parseXml(string $xml, ?string $source = null, ?MarkupParseOptions $options = null): Node
@@ -240,6 +255,19 @@ final class AbstractCore
     public function treeJson(Node $tree, bool $pretty = true, string $mode = JsonEmitter::MODE_CANONICAL): string
     {
         return (new JsonEmitter())->emitTree($tree, $pretty, $mode);
+    }
+
+    public function sourceJson(Node $tree, bool $pretty = true, string $operatorStyle = 'readable', bool $explicitTypedValues = false): string
+    {
+        return json_encode(
+            SourceSerializer::toSourceNode($tree, $operatorStyle, $explicitTypedValues),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | ($pretty ? JSON_PRETTY_PRINT : 0),
+        );
+    }
+
+    public function sourceAml(Node $tree, bool $pretty = true, string $operatorStyle = 'readable', bool $explicitTypedValues = false): string
+    {
+        return (new AmlEmitter())->emitTree($tree, $pretty, $operatorStyle, explicitTypedValues: $explicitTypedValues);
     }
 
     private static function defaultRenderTargets(): RenderTargetRegistry

@@ -52,6 +52,7 @@ final class ReactMapper implements MapperInterface
             Node::ELEMENT => $this->mapElement($node, $context, $imports),
             Node::VALUE => $this->mapValue($node),
             Node::RUNTIME => $this->handleRuntime($node, $context),
+            Node::LOGIC => $this->handleLogic($node, $context),
             default => throw new MappingException(sprintf('React mapper cannot map node kind "%s".', $node->kind)),
         };
     }
@@ -125,6 +126,14 @@ final class ReactMapper implements MapperInterface
     {
         if ($context?->strict ?? $this->strict) {
             throw new MappingException(sprintf('React mapper received unresolved runtime node ":%s".', $node->name));
+        }
+        return TargetNode::fragment([]);
+    }
+
+    private function handleLogic(Node $node, ?MappingContext $context): TargetNode
+    {
+        if ($context?->strict ?? $this->strict) {
+            throw new MappingException(sprintf('React mapper received unresolved logic node "%s".', $node->op));
         }
         return TargetNode::fragment([]);
     }

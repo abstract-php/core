@@ -1,193 +1,151 @@
-# Abstract Specification
+# Abstract PHP Specification Notes
 
-## Core Model
+This file records the PHP implementation's formal behavior and language-specific details. The canonical shared documentation is:
 
-All source formats normalize into an Abstract Tree. The PHP v0 model uses these node kinds:
+- [Core Concepts](../docs/CORE-CONCEPTS.md) for the processing model and five node kinds.
+- [Source Commands](../docs/SOURCE-COMMANDS.md) for the complete portable command catalog.
+- [Extending Abstract](../docs/EXTENDING.md) for supported and closed public extension boundaries.
+- [Feature Parity](../FEATURES.md) for differences between PHP and TypeScript.
 
-- `element`: renderable or mappable named node with `name`, `props`, and `children`
-- `runtime`: processing node with `name`, `props`, optional `value`, and `children`
-- `value`: typed data node with `type` and `value`
-- `fragment`: ordered list of child nodes
+When this file and the shared command catalog overlap, the shared catalog defines portable source syntax and this file defines PHP implementation behavior.
 
-Source metadata is optional. PHP v0 records JSON pointer metadata and source file paths when available.
+## Canonical Model
 
-## Tag-Key Syntax
+All PHP parsers normalize into `Abstract\Tree\Node`. The five public kinds are:
 
-JSON is the reference syntax, and YAML/TOML/Pkl decode into the same native tag-key data model before normalization. Normal object/map keys are element/component names:
+| Kind | Required meaning |
+| --- | --- |
+| `element` | named target content with `name`, `props`, and `children` |
+| `value` | typed data with `type` and `value` |
+| `fragment` | ordered `children` without a wrapper |
+| `runtime` | contextual processing with `name`, `props`, optional `value`, and `children` |
+| `logic` | canonical operation with `op` and child-like `args` |
 
-```json
-{ "div": "hello" }
-```
+Source metadata is optional. PHP records source paths and JSON-pointer-like locations when available.
 
-`@` is props. `#` is children:
+Canonical node kinds are closed. Applications cannot register another kind through the public API.
+
+## Native Tag-Key Normalization
+
+JSON is the reference native-data syntax. YAML, TOML, and Pkl decode into native PHP values and then use the same `NativeTagParser`.
 
 ```json
 {
-  "div": {
+  "article": {
     "@": { "class": "card" },
     "#": [
-      { "span": "Hello" }
+      { "h1": "Title" },
+      { "p": "Body" }
     ]
   }
 }
 ```
 
-Objects without `@` or `#` are shorthand child maps:
+Rules:
 
-```json
-{ "div": { "h1": "Title", "p": "Body" } }
+1. A normal map key becomes an Element name.
+2. `@` contains props for the enclosing Element or Runtime node.
+3. `#` contains ordered children.
+4. A colon-prefixed key is an internal source command.
+5. A primitive becomes an inferred Value node.
+6. A list or multiple map roots becomes a Fragment.
+7. An object without `@` or `#` is a shorthand child map.
+
+Repeated Elements use arrays because JSON object keys cannot repeat.
+
+Bare names stay user-owned. PHP does not interpret `eq`, `and`, `int`, `logic:eq`, or `type:int` as internal native-data source. New built-in domain source uses `:logic:eq` and `:type:int`.
+
+## Internal Commands
+
+The portable command set and aliases are defined in [Source Commands](../docs/SOURCE-COMMANDS.md).
+
+The source-to-node boundary is significant:
+
+- `:type:int` normalizes immediately to `Node::VALUE` with type `int`.
+- `:logic:eq` normalizes immediately to `Node::LOGIC` with op `eq`.
+- `:if`, `:each`, and `:import` normalize to `Node::RUNTIME`.
+- `:comment`, `:doctype`, `:cdata`, `:raw`, and `:text` normalize to structural Value nodes.
+
+`Runtime node` is therefore not the umbrella term for all internal commands.
+
+Unknown explicit Type or Logic commands throw `ParseException` in strict parsing. Loose parsing records a diagnostic and preserves a safe Runtime-shaped node. There is no public type, logic-operator, or runtime-handler registry.
+
+## Logic Evaluation
+
+`LogicEvaluator` evaluates canonical Logic nodes against a context map. Supported shared operators are:
+
+```text
+eq ne gt gte lt lte and or not add sub mul div mod var
 ```
 
-Arrays are ordered children/fragments. Repeated elements must use arrays because JSON object keys cannot repeat.
-
-## Types
-
-Primitive source values infer these types:
-
-- string
-- int
-- float
-- bool
-- null
-- array
-- object
-
-Explicit typed runtime keys override inference:
+Symbol source aliases normalize before evaluation. No source alias appears in canonical `op` values.
 
 ```json
-{ ":int": "42" }
+{
+  ":logic:eq": [
+    { ":logic:var": "user.role" },
+    { ":type:string": "admin" }
+  ]
+}
 ```
 
-Supported typed nodes in v0:
+`var` reads a dotted context path and accepts an optional fallback argument. A root Logic node resolves to a Value node. A Logic node in a prop resolves to its plain PHP value.
 
-- `:string`
-- `:int` / `:integer`
-- `:float`
-- `:bool` / `:boolean`
-- `:null`
-- `:array`
-- `:object`
-
-When ambiguity matters, plain data objects should be represented with `:object`.
-
-Structural markup values may also appear when parsing HTML/XML-style source:
-
-- `comment`
-- `doctype`
-- `cdata`
-- `raw`
-
-In JSON tag-key form these can be represented with reserved explicit value keys such as `:comment`, `:doctype`, `:cdata`, and `:raw`. They are value nodes, not executable runtime behavior.
-
-## Runtime Nodes
-
-Runtime nodes begin with `:` and are never rendered literally. Built-in short names are reserved for core behavior. Third-party packages should prefer namespaced runtime nodes such as `:vendor.name`, `:acme.chart`, or `:local.hero`.
-
-Supported runtime nodes in PHP v0:
-
-- `:expr`
-- `:if`
-- `:else`
-- `:each`
-- `:import`
-- `:include`
-- `:props`
-- `:attributes`
-
-Recognized but rejected by the strict default runtime:
-
-- `:php`
-- `:js`
-- `:ts`
-- `:code`
-
-These are payload/directive concepts only. Core v0 does not execute them.
-
-## Props Modifiers
-
-`:props` and `:attributes` patch the direct parent element props.
-
-Merge order:
-
-1. Start with static `@` props.
-2. Apply `:props` and `:attributes` in child order.
-3. Later values override earlier values.
-
-`:` props modifiers without a parent element are invalid in strict mode.
-
-## Logic
-
-`:expr` evaluates a deterministic data expression against a context object.
-
-Supported v0 operators:
-
-- `var`
-- `==`
-- `!=`
-- `>`
-- `>=`
-- `<`
-- `<=`
-- `and`
-- `or`
-- `!`
-- `+`
-- `-`
-- `*`
-- `/`
+Legacy `:expr` remains accepted and may contain old bare readable operators. It is compatibility syntax and is not emitted for canonical Logic nodes.
 
 No raw PHP or JavaScript `eval` is used.
 
-`:if` chooses between children and `:else`:
+## Runtime Resolution
+
+`RuntimeResolver` handles canonical Runtime nodes after parsing.
+
+### Conditions
+
+`:if` requires a `test` prop. A truthy test selects normal children; a false test selects the contextual `:else` branch.
 
 ```json
 {
   ":if": {
-    "@": {
-      "test": { ":expr": { "var": "user.isLoggedIn" } }
-    },
+    "@": { "test": { ":logic:var": "user.isLoggedIn" } },
     "#": [{ "Dashboard": [] }],
     ":else": [{ "Login": [] }]
   }
 }
 ```
 
-`:each` expands children for each item:
+`:else` is invalid outside `:if`. `:elseif` is not a supported public command; use a nested `:if` inside `:else`.
+
+### Loops
+
+`:each` requires an iterable `items` prop. `as` defaults to `item`, `index` defaults to `index`, and `key` is provided for the source iterable key.
 
 ```json
 {
   ":each": {
     "@": {
-      "items": { ":expr": { "var": "users" } },
+      "items": { ":logic:var": "users" },
       "as": "user"
     },
     "#": [
-      { "UserCard": { "@": { "name": { ":expr": { "var": "user.name" } } } } }
+      { "UserCard": { "@": { "name": { ":logic:var": "user.name" } } } }
     ]
   }
 }
 ```
 
-## Imports
+### Parent Prop Modifiers
 
-`:import` and `:include` resolve JSON Abstract files relative to the importing source file.
+`:props` and `:attributes` patch only their direct parent Element. Merge order is:
 
-Supported forms:
+1. Start with static `@` props.
+2. Apply modifiers in child order.
+3. Later values replace earlier values.
 
-```json
-{ ":import": "./components/Header.abstract.json" }
-```
+A modifier outside an Element is a strict resolution error.
 
-```json
-{
-  ":import": {
-    "@": {
-      "src": "./components/Card.abstract.json",
-      "props": { "title": "Welcome" }
-    }
-  }
-}
-```
+### Imports
+
+`:import` and `:include` resolve another Abstract JSON file relative to the importing source path.
 
 ```json
 {
@@ -196,121 +154,93 @@ Supported forms:
       "src": "./components/Card.abstract.json",
       "props": { "title": "Welcome" }
     },
-    "#": [
-      { "p": "This becomes slot content." }
-    ]
+    "#": [{ "p": "Slot content" }]
   }
 }
 ```
 
-Circular imports and missing imports are strict errors.
+Import props extend context and are also available as `props`. Slot children append to the imported root Element or Fragment. Imports are cached by absolute path, modification time, and content hash. Missing and circular imports are strict errors.
+
+### Inert And Unknown Runtime Nodes
+
+`:php`, `:js`, `:ts`, and `:code` parse as inert payload Runtime nodes. Strict resolution rejects them; loose resolution warns and drops them. They never execute code.
+
+Other unknown Runtime names behave the same way. Parsing `:vendor.operation` does not register a handler.
+
+## Markup Parsing
+
+PHP provides distinct HTML, AML, and XML modes through `DomMarkupParser` and `MarkupParseOptions`.
+
+- Normal tags become Elements.
+- Known internal command tags normalize to Value, Logic, or Runtime nodes according to the same source rules.
+- Attributes become props.
+- Text becomes string Values.
+- Comments, doctypes, CDATA, and raw script/style text use structural Value types.
+- Nonstandard names pass through a DOM-safe placeholder layer.
+- HTML void Elements are childless and following parsed descendants are lifted back to sibling position.
+- Text-only HTML becomes one string Value rather than an implicit `<p>`.
+
+Preferred AML command tags include `<:logic:eq>`, `<:type:bool>`, and `<:if>`. Compatibility forms are listed in the shared command catalog.
+
+Markup round-trip correctness is structural, not byte-for-byte. Formatting and attribute quote style are not stable contracts.
+
+## Data Formats
+
+### YAML
+
+YAML supports scalar, list, and map roots. It shares tag-key meaning with JSON.
+
+### TOML
+
+TOML is table-oriented. Parsing scalar documents and emitting scalar/list roots fail with format-specific errors.
+
+### Pkl
+
+Pkl is PHP-only. Parsing uses:
+
+```text
+pkl eval --format=json --no-project --root-dir=<source-dir> --working-dir=<source-dir> <file>
+```
+
+The bridge uses an argument array, timeout, and restricted root. Pkl parsing is an explicit operation for trusted local modules, not an Abstract runtime code command. Emission requires an object/map root.
+
+## Source And Tree Emission
+
+- `sourceJson()` emits editable tag-key source and keeps internal commands.
+- `sourceAml()` emits editable AML and keeps internal commands.
+- readable source defaults to `:logic:<op>` / `<:logic:<op>>`.
+- `operatorStyle: 'symbol'` emits aliases such as `:==` / `<:==>`.
+- `explicitTypedValues: true` requests `:type:*` wrappers where supported.
+- `treeJson()` emits canonical, compact, or tagged tree data and does not resolve nodes.
+
+Canonical Logic JSON uses `kind`, canonical `op`, and `args`. Canonical typed Value JSON uses `kind`, canonical `type`, and `value`.
 
 ## Render Targets, Mappers, And Emitters
 
-Render targets connect a target-aware mapper to an emitter. Mappers decide target meaning. Emitters serialize mapped results.
-
-PHP v0 includes:
-
-- `HtmlMapper` + `HtmlEmitter`
-- `ReactMapper` + `JsxEmitter`
-- `HtmlMapper` + `XmlEmitter`
-- `JsonEmitter` for tree inspection
-
-Runtime nodes should be resolved before final mapping. Mappers reject unresolved runtime nodes in strict mode.
-
-Custom mapping is target-aware:
-
-- HTML element mappings can rename element tags, for example `input` -> `x-input`.
-- React mappings can map Abstract element names to local or imported JSX components.
-- JSX imports are collected by the React mapper and deduplicated by the JSX document/emitter layer.
-- A JSX mapping does not change HTML output, and an HTML mapping does not change JSX output.
-
-Unknown normal elements remain generic by default. Custom mapping overrides default behavior for the configured target only.
-
-## Markup Source Syntax
-
-PHP v0 includes HTML and XML markup parsing backed by DOMDocument/libxml.
-
-Markup normalization rules:
-
-- normal tags become `element` nodes
-- tags beginning with `:` become `runtime` nodes
-- attributes become props
-- non-English, mixed-case, namespaced, dotted, underscored, or very long tag/attribute names are preserved through a DOM-safe placeholder pass
-- text becomes typed string values
-- comments become `comment` values
-- doctype becomes a `doctype` value when present in source
-- `script` and `style` content becomes raw text for safe roundtrip emission
-- parser metadata can be disabled for production/benchmark paths
-
-Text-only HTML input contains no real markup token and therefore normalizes to a single string value. It must not become an implicit `<p>`:
+`AbstractCore::render()` performs:
 
 ```text
-Hello Test
+resolve -> target lookup -> MappingContext -> mapper -> emitter
 ```
 
-Compact JSON:
+Built-in registered targets are HTML, JSX, and XML. YAML, TOML, and Pkl helpers resolve and then serialize tree data through their format emitters.
 
-```json
-"Hello Test"
-```
+`RenderTarget` pairs `MapperInterface` and `EmitterInterface`. `withRenderTarget()` replaces or adds a named target immutably. Element mapping is target-specific: changing an HTML tag does not change JSX output.
 
-HTML:
+Public target extensions are documented in [Extending Abstract](../docs/EXTENDING.md). They do not add source commands or runtime evaluation.
 
-```html
-Hello Test
-```
+## Strict And Loose Contracts
 
-DOMDocument may nest children under HTML void elements such as `source`, `img`, `meta`, or `br` when parsing non-beautified HTML. Abstract normalizes those cases by treating void elements as childless and lifting any parsed descendants back to sibling position before mapping/emission.
+Strict mode is the default correctness path.
 
-Markup roundtrip correctness is structural, not byte-for-byte. Formatting, attribute quote style, and other harmless serializer differences are not part of the v0 guarantee.
+Strict parsing rejects malformed source and unknown explicit Type/Logic domain commands. Strict resolution rejects unknown or misplaced Runtime nodes, inert directives, invalid imports, and mapper/runtime mismatches.
 
-Runtime markup names after `:` must use portable ASCII names such as `<:if>` or `<:vendor.name>`. Non-English element names should be written without `:`, for example `<กรรม>ทดสอบ</กรรม>`.
+Loose parsing preserves unknown explicit domain source safely and reports diagnostics. Loose resolution may drop an unresolved Runtime node only when dropping is safe and diagnosable. Loose mode never turns unknown source into executable behavior.
 
-## JSON Export Modes
+## Portability Notes
 
-`JsonEmitter` supports three output modes:
-
-- `canonical`: full internal model, suitable for fixtures and debugging
-- `compact`: storage-oriented tag-key JSON that omits internal model keys where unambiguous
-- `tagged`: explicit Abstract tags for values/runtime nodes, suitable for API/debug output
-
-Compact JSON is intended for backend storage. It preserves enough syntax to render later while avoiding repeated internal strings such as `kind`, `name`, `props`, and `children`.
-
-## Data/Config Source Formats
-
-YAML, TOML, and Pkl are data/config formats rather than tag-based markup. They are decoded to native maps/lists/scalars and then normalized with the same rules as JSON.
-
-YAML:
-
-- supports scalar, list, and map roots
-- is the most flexible human-friendly storage/render format after JSON
-
-TOML:
-
-- is best for object/table roots
-- parsing scalar documents fails because TOML has no top-level scalar document form
-- rendering scalar/list roots fails with a clear mapping error
-
-Pkl:
-
-- parsing uses `pkl eval --format=json --no-project --root-dir`
-- renderer emits simple module properties and `new Mapping` values
-- rendering scalar/list roots fails because Pkl module output is property-oriented
-- Pkl is only evaluated through explicit parser calls for trusted local config modules
-
-These formats must not introduce different meaning for `@`, `#`, `:runtime`, typed nodes, props modifiers, or logic.
-
-## XML Output
-
-XML output uses XML escaping and always emits explicit closing tags. It does not use HTML void-tag behavior.
-
-## Modes
-
-Strict mode is the default. It errors on unknown runtime nodes, invalid imports, invalid props modifiers, payload code nodes, and mapper/runtime mismatches.
-
-Loose mode warns and drops unknown runtime nodes when dropping is safe.
-
-## Future Source Formats
-
-JSON, HTML, XML, YAML, TOML, and Pkl are the PHP v0 parser family. AML and richer markup-specific parsers should be added through the same parser interface and must normalize into the same tree model.
+- PHP supports Pkl; TypeScript does not.
+- PHP imports are built-in filesystem operations; TypeScript imports use loaders.
+- TypeScript legacy raw expressions support `in`; PHP does not. `:logic:in` is not portable or supported.
+- React runtime output belongs to TypeScript's external React mapper; PHP emits JSX-like source only.
+- XML parser backends differ, so portable documents should use the documented Abstract command forms and depend on structural rather than byte-identical output.

@@ -95,7 +95,11 @@ final class AbstractCoreTest extends TestCase
 
     public function testExplicitTypedNodesOverrideInference(): void
     {
-        $tree = $this->parser->parseString('{"div":[{":string":42},{":int":"42"},{":float":"1.5"},{":bool":"true"},{":null":"ignored"},{":array":{"a":1}},{":object":{"a":1}}]}');
+        $tree = $this->parser->parseString('{"div":[{":type:string":42},{":type:int":"42"},{":type:float":"1.5"},{":type:bool":"true"},{":type:null":"ignored"},{":type:array":{"a":1}},{":type:object":{"a":1}}]}');
+        $string = $this->parser->parseString('{":type:string":"x"}');
+        $legacyString = $this->parser->parseString('{":string":"x"}');
+        $bool = $this->parser->parseString('{":type:bool":true}');
+        $legacyBool = $this->parser->parseString('{":boolean":true}');
 
         self::assertSame(['string', 'int', 'float', 'bool', 'null', 'array', 'object'], array_map(
             static fn (Node $node): ?string => $node->type,
@@ -105,6 +109,37 @@ final class AbstractCoreTest extends TestCase
             static fn (Node $node): mixed => $node->value,
             $tree->children,
         ));
+        self::assertSame($string->type, $legacyString->type);
+        self::assertSame($string->value, $legacyString->value);
+        self::assertSame($bool->type, $legacyBool->type);
+        self::assertSame($bool->value, $legacyBool->value);
+        self::assertSame('{":type:bool":true}', $this->core->sourceJson($bool, false, explicitTypedValues: true));
+    }
+
+    public function testEveryDocumentedTypeCommandAndCompatibilityAliasNormalizes(): void
+    {
+        $cases = [
+            'string' => ['input' => 42, 'expected' => '42', 'aliases' => [':string']],
+            'int' => ['input' => '42', 'expected' => 42, 'aliases' => [':int', ':integer', ':type:integer']],
+            'float' => ['input' => '1.5', 'expected' => 1.5, 'aliases' => [':float']],
+            'bool' => ['input' => 'true', 'expected' => true, 'aliases' => [':bool', ':boolean', ':type:boolean']],
+            'null' => ['input' => 'ignored', 'expected' => null, 'aliases' => [':null']],
+            'array' => ['input' => ['a' => 1], 'expected' => [1], 'aliases' => [':array']],
+            'object' => ['input' => ['a' => 1], 'expected' => ['a' => 1], 'aliases' => [':object']],
+        ];
+
+        foreach ($cases as $type => $case) {
+            $preferred = $this->core->parseJson((string) json_encode([':type:' . $type => $case['input']], JSON_THROW_ON_ERROR));
+            self::assertSame(Node::VALUE, $preferred->kind, $type);
+            self::assertSame($type, $preferred->type, $type);
+            self::assertSame($case['expected'], $preferred->value, $type);
+
+            foreach ($case['aliases'] as $alias) {
+                $compatible = $this->core->parseJson((string) json_encode([$alias => $case['input']], JSON_THROW_ON_ERROR));
+                self::assertSame($type, $compatible->type, $alias);
+                self::assertSame($case['expected'], $compatible->value, $alias);
+            }
+        }
     }
 
     public function testAttributesModifierPatchesParentProps(): void
@@ -160,6 +195,161 @@ final class AbstractCoreTest extends TestCase
         self::assertTrue($resolved->value);
     }
 
+    public function testJsonLogicOperatorAliasesNormalizeAndEvaluate(): void
+    {
+        $qualified = $this->parser->parseString('{":logic:eq":[{":type:bool":true},{":type:int":1}]}');
+        $eq = $this->parser->parseString('{":==":[{":type:bool":true},{":type:int":1}]}');
+        $fallback = $this->parser->parseString('{":eq":[{":type:bool":true},{":type:int":1}]}');
+        $ne = $this->parser->parseString('{":!=":[{":type:bool":false},{":type:int":0}]}');
+        $nested = $this->parser->parseString('{":logic:and":[{":==":[{":type:bool":true},{":type:int":1}]},{":logic:ne":[{":type:bool":false},{":type:int":1}]}]}');
+        $wrapped = $this->parser->parseString('{":logic":{":eq":[{":type:bool":true},{":type:int":1}]}}');
+        $mod = $this->parser->parseString('{":%":[{":type:int":5},{":type:int":2}]}');
+        $element = $this->parser->parseString('{"logic:eq":[true,1]}');
+
+        self::assertSame(Node::LOGIC, $qualified->kind);
+        self::assertSame('eq', $qualified->op);
+        self::assertSame(Node::LOGIC, $eq->kind);
+        self::assertSame('eq', $eq->op);
+        self::assertSame('eq', $fallback->op);
+        self::assertSame('ne', $ne->op);
+        self::assertSame('and', $nested->op);
+        self::assertSame('eq', $wrapped->op);
+        self::assertSame([true, 1], array_map(static fn (Node $arg): mixed => $arg->value, $qualified->args));
+        self::assertSame(Node::ELEMENT, $element->kind);
+        self::assertSame('logic:eq', $element->name);
+        self::assertTrue($this->core->resolve($eq)->value);
+        self::assertTrue($this->core->resolve($nested)->value);
+        self::assertSame(1, $this->core->resolve($mod)->value);
+    }
+
+    public function testEveryDocumentedLogicCommandNormalizesAndEvaluates(): void
+    {
+        $cases = [
+            'eq' => ['args' => [1, '1'], 'expected' => true, 'symbol' => '=='],
+            'ne' => ['args' => [1, 2], 'expected' => true, 'symbol' => '!='],
+            'gt' => ['args' => [2, 1], 'expected' => true, 'symbol' => '>'],
+            'gte' => ['args' => [2, 2], 'expected' => true, 'symbol' => '>='],
+            'lt' => ['args' => [1, 2], 'expected' => true, 'symbol' => '<'],
+            'lte' => ['args' => [2, 2], 'expected' => true, 'symbol' => '<='],
+            'and' => ['args' => [true, 1], 'expected' => true],
+            'or' => ['args' => [false, 1], 'expected' => true],
+            'not' => ['args' => [false], 'expected' => true, 'symbol' => '!'],
+            'add' => ['args' => [2, 3], 'expected' => 5, 'symbol' => '+'],
+            'sub' => ['args' => [5, 2], 'expected' => 3, 'symbol' => '-'],
+            'mul' => ['args' => [2, 3], 'expected' => 6, 'symbol' => '*'],
+            'div' => ['args' => [8, 2], 'expected' => 4, 'symbol' => '/'],
+            'mod' => ['args' => [5, 2], 'expected' => 1, 'symbol' => '%'],
+            'var' => ['args' => ['user.name'], 'expected' => 'Ada', 'context' => ['user' => ['name' => 'Ada']]],
+        ];
+
+        foreach ($cases as $op => $case) {
+            $preferred = $this->core->parseJson((string) json_encode([':logic:' . $op => $case['args']], JSON_THROW_ON_ERROR));
+            $fallback = $this->core->parseJson((string) json_encode([':' . $op => $case['args']], JSON_THROW_ON_ERROR));
+            $wrapped = $this->core->parseJson((string) json_encode([':logic' => [':' . $op => $case['args']]], JSON_THROW_ON_ERROR));
+
+            foreach ([$preferred, $fallback, $wrapped] as $node) {
+                self::assertSame(Node::LOGIC, $node->kind, $op);
+                self::assertSame($op, $node->op, $op);
+            }
+
+            if (isset($case['symbol'])) {
+                $symbol = $this->core->parseJson((string) json_encode([':' . $case['symbol'] => $case['args']], JSON_THROW_ON_ERROR));
+                self::assertSame($op, $symbol->op, ':' . $case['symbol']);
+            }
+
+            $resolved = $this->core->resolve($preferred, $case['context'] ?? []);
+            self::assertSame($case['expected'], $resolved->value, $op);
+            self::assertStringContainsString('":logic:' . $op . '"', $this->core->sourceJson($preferred, false));
+        }
+    }
+
+    public function testUnknownExplicitTypeCommandsErrorInStrictModeAndPreserveInLooseMode(): void
+    {
+        try {
+            $this->parser->parseString('{":type:custom":"x"}');
+            self::fail('Expected unknown :type command to throw.');
+        } catch (ParseException $exception) {
+            self::assertStringContainsString('Unknown Abstract Type ":type:custom"', $exception->getMessage());
+        }
+
+        $element = $this->parser->parseString('{"type:string":"x"}');
+        self::assertSame(Node::ELEMENT, $element->kind);
+        self::assertSame('type:string', $element->name);
+
+        $diagnostics = [];
+        $loose = $this->core->parseJson('{":type:custom":"x"}', strict: false, diagnostics: $diagnostics);
+        self::assertSame(Node::RUNTIME, $loose->kind);
+        self::assertSame('type:custom', $loose->name);
+        self::assertSame('x', $loose->value);
+        self::assertStringContainsString('Unknown Abstract Type ":type:custom"', $diagnostics[0]['message']);
+    }
+
+    public function testUnknownExplicitLogicOperatorsErrorInStrictModeAndPreserveInLooseMode(): void
+    {
+        try {
+            $this->parser->parseString('{":logic":{"eq":[1,2]}}');
+            self::fail('Expected unknown :logic operator to throw.');
+        } catch (ParseException $exception) {
+            self::assertStringContainsString('Unknown Abstract Logic operator "eq"', $exception->getMessage());
+        }
+
+        try {
+            $this->parser->parseString('{":logic:xor":[1,2]}');
+            self::fail('Expected unknown logic namespace operator to throw.');
+        } catch (ParseException $exception) {
+            self::assertStringContainsString('Unknown Abstract Logic operator ":logic:xor"', $exception->getMessage());
+        }
+
+        $wrappedDiagnostics = [];
+        $wrapped = $this->core->parseJson('{":logic":{"eq":[1,2]}}', strict: false, diagnostics: $wrappedDiagnostics);
+        self::assertSame(Node::RUNTIME, $wrapped->kind);
+        self::assertSame('logic', $wrapped->name);
+        self::assertSame(['eq' => [1, 2]], $wrapped->value);
+        self::assertStringContainsString('Unknown Abstract Logic operator "eq"', $wrappedDiagnostics[0]['message']);
+
+        $qualifiedDiagnostics = [];
+        $qualified = $this->core->parseJson('{":logic:xor":[1,2]}', strict: false, diagnostics: $qualifiedDiagnostics);
+        self::assertSame(Node::RUNTIME, $qualified->kind);
+        self::assertSame('logic:xor', $qualified->name);
+        self::assertStringContainsString('Unknown Abstract Logic operator ":logic:xor"', $qualifiedDiagnostics[0]['message']);
+    }
+
+    public function testAmlLogicOperatorAliasesAndSourceEmission(): void
+    {
+        $options = new MarkupParseOptions(mode: MarkupParseOptions::MODE_AML, preserveWhitespace: false, includeMeta: false);
+        $scoped = $this->core->parseAml(<<<'AML'
+	<:logic>
+	  <:logic:and>
+	    <:==><:type:bool>true</:type:bool><:type:int>1</:type:int></:==>
+	    <:logic:ne><:type:bool>false</:type:bool><:type:int>0</:type:int></:logic:ne>
+	  </:logic:and>
+	</:logic>
+	AML, options: $options);
+        $prefixed = $this->core->parseAml('<:logic:eq><:type:bool>true</:type:bool><:type:int>1</:type:int></:logic:eq>', options: $options);
+        $fallback = $this->core->parseAml('<:eq><:type:bool>true</:type:bool><:type:int>1</:type:int></:eq>', options: $options);
+        $readable = $this->core->parseAml('<:logic:eq><:type:bool>true</:type:bool><:type:int>1</:type:int></:logic:eq>', options: $options);
+        $legacyTyped = $this->core->parseAml('<:logic:eq><type:boolean>true</type:boolean><:int>1</:int></:logic:eq>', options: $options);
+        $xmlLogic = $this->core->parseXml('<:logic:eq>true</:logic:eq>');
+        $xmlTyped = $this->core->parseXml('<:type:bool>true</:type:bool>');
+
+        self::assertSame(Node::LOGIC, $scoped->kind);
+        self::assertSame('and', $scoped->op);
+        self::assertSame('eq', $prefixed->op);
+        self::assertSame('eq', $fallback->op);
+        self::assertSame('eq', $legacyTyped->op);
+        self::assertSame('eq', $xmlLogic->op);
+        self::assertSame(Node::VALUE, $xmlTyped->kind);
+        self::assertSame('bool', $xmlTyped->type);
+        self::assertSame($prefixed->op, $readable->op);
+        self::assertSame($prefixed->args[0]->value, $readable->args[0]->value);
+        self::assertSame($legacyTyped->args[0]->value, $readable->args[0]->value);
+        self::assertSame('<:logic:eq><:type:bool>true</:type:bool><:type:int>1</:type:int></:logic:eq>', $this->core->sourceAml($readable, false));
+        self::assertSame('<:==><:type:bool>true</:type:bool><:type:int>1</:type:int></:==>', $this->core->sourceAml($readable, false, 'symbol'));
+        self::assertSame('{":logic:eq":[true,1]}', $this->core->sourceJson($readable, false));
+        self::assertSame('{":==":[true,1]}', $this->core->sourceJson($readable, false, 'symbol'));
+        self::assertSame('<:type:bool>true</:type:bool>', $this->core->sourceAml(Node::value('bool', true), false, explicitTypedValues: true));
+    }
+
     public function testIfTrueBranchFixture(): void
     {
         $tree = $this->parser->parseFile(__DIR__ . '/../fixtures/runtime/logic-if.input.json');
@@ -198,6 +388,33 @@ final class AbstractCoreTest extends TestCase
             trim((string) file_get_contents(__DIR__ . '/../fixtures/import/expected.html')),
             $this->core->renderHtml($tree),
         );
+    }
+
+    public function testIncludeUsesTheDocumentedImportCompatibilityBehavior(): void
+    {
+        $tree = $this->parser->parseString(
+            '{":include":"./components/Header.abstract.json"}',
+            __DIR__ . '/../fixtures/import/page.input.json',
+        );
+
+        self::assertSame('<header class="site-header"><h1>Abstract</h1></header>', $this->core->renderHtml($tree));
+    }
+
+    public function testEveryDocumentedStructuralValueCommandParsesAsAValue(): void
+    {
+        $expectedTypes = [
+            'comment' => 'comment',
+            'doctype' => 'doctype',
+            'cdata' => 'cdata',
+            'raw' => 'raw',
+            'text' => 'string',
+        ];
+
+        foreach ($expectedTypes as $command => $type) {
+            $node = $this->core->parseJson((string) json_encode([':' . $command => 'content'], JSON_THROW_ON_ERROR));
+            self::assertSame(Node::VALUE, $node->kind, $command);
+            self::assertSame($type, $node->type, $command);
+        }
     }
 
     public function testCircularImportError(): void
@@ -256,9 +473,18 @@ final class AbstractCoreTest extends TestCase
 
     public function testPayloadNodesAreRejectedByStrictDefaultRuntime(): void
     {
-        $this->expectException(RuntimeResolutionException::class);
+        foreach (['php', 'js', 'ts', 'code'] as $directive) {
+            try {
+                $this->core->resolve($this->parser->parseString((string) json_encode([':' . $directive => 'payload'], JSON_THROW_ON_ERROR)));
+                self::fail('Expected :' . $directive . ' to be rejected.');
+            } catch (RuntimeResolutionException $exception) {
+                self::assertStringContainsString('not executable or renderable', $exception->getMessage());
+            }
+        }
 
-        $this->core->resolve($this->parser->parseString('{":php":"<?php echo $user->name; ?>"}'));
+        $this->expectException(RuntimeResolutionException::class);
+        $this->expectExceptionMessage('only valid inside ":if"');
+        $this->core->resolve($this->parser->parseString('{":elseif":[]}'));
     }
 
     public function testMarkupParserParsesFullHtmlDocumentFixture(): void

@@ -11,7 +11,7 @@ source -> parser/normalizer -> Abstract Tree -> runtime resolver -> mapper -> em
 Each stage has one job:
 
 - parser/normalizer reads syntax and builds boring canonical nodes
-- runtime resolver consumes `:` nodes using deterministic handlers
+- runtime resolver consumes canonical Runtime and Logic nodes using deterministic handlers
 - mapper converts resolved nodes to target meaning
 - emitter serializes mapped target nodes
 
@@ -38,7 +38,7 @@ The public PHP namespace is `Abstract\...`. PHP accepts the capitalized namespac
 
 ## Tree Model
 
-`Abstract\Tree\Node` is the canonical tree value object. It supports `element`, `runtime`, `value`, and `fragment` node creation plus array serialization for shared fixtures.
+`Abstract\Tree\Node` is the canonical tree value object. It supports `element`, `runtime`, `value`, `fragment`, and `logic` node creation plus array serialization for shared fixtures.
 
 The tree is intentionally strict and plain. Render behavior does not live on the node model.
 
@@ -49,8 +49,9 @@ The tree is intentionally strict and plain. Render behavior does not live on the
 Important parser decisions:
 
 - Normal keys become elements.
-- Runtime keys start with `:`.
-- Typed runtime nodes become `value` nodes during normalization.
+- Internal source command keys start with `:`.
+- Type domain commands become `value` nodes during normalization.
+- Logic domain commands become `logic` nodes during normalization.
 - `@` props are data maps, but explicit runtime values inside props are preserved as nodes.
 - `#` is ordered child content.
 - Objects without `@` or `#` become shorthand child maps.
@@ -93,7 +94,8 @@ The old draft markup parser is not a dependency. Its useful direction was native
 
 Runtime behavior:
 
-- `:expr` delegates to `LogicEvaluator`.
+- first-class `logic` nodes from preferred `:logic:<op>` source delegate to `LogicEvaluator`; legacy `:expr` remains compatible.
+- preferred `:type:<name>` source normalizes directly to canonical value nodes.
 - `:if` resolves one branch.
 - `:each` expands children with a loop context.
 - `:props` and `:attributes` patch only the direct parent element.

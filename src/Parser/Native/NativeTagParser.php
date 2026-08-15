@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Abstract\Parser\Native;
 
 use Abstract\Exception\ParseException;
+use Abstract\Runtime\LogicOperators;
+use Abstract\Runtime\ValueTypes;
 use Abstract\Tree\Node;
 use stdClass;
 
@@ -12,18 +14,10 @@ final class NativeTagParser
 {
     private const RUNTIME_PREFIX = ':';
 
-    /** @var array<string, true> */
-    private const TYPED_RUNTIME = [
-        'string' => true,
-        'int' => true,
-        'integer' => true,
-        'float' => true,
-        'bool' => true,
-        'boolean' => true,
-        'null' => true,
-        'array' => true,
-        'object' => true,
-    ];
+    private bool $strict = true;
+
+    /** @var list<array{level: string, message: string}> */
+    private array $diagnostics = [];
 
     /** @var array<string, true> */
     private const STRUCTURAL_VALUE_RUNTIME = [
@@ -34,9 +28,26 @@ final class NativeTagParser
         'text' => true,
     ];
 
-    public function parse(mixed $value, ?string $source = null): Node
+    /**
+     * @param list<array{level: string, message: string}>|null $diagnostics
+     */
+    public function parse(mixed $value, ?string $source = null, bool $strict = true, ?array &$diagnostics = null): Node
     {
-        return $this->parseValue($value, $this->meta($source, ''));
+        $previousStrict = $this->strict;
+        $previousDiagnostics = $this->diagnostics;
+        $this->strict = $strict;
+        $this->diagnostics = [];
+
+        try {
+            return $this->parseValue($value, $this->meta($source, ''));
+        } finally {
+            if ($diagnostics !== null) {
+                array_push($diagnostics, ...$this->diagnostics);
+            }
+
+            $this->strict = $previousStrict;
+            $this->diagnostics = $previousDiagnostics;
+        }
     }
 
     /**
@@ -88,6 +99,15 @@ final class NativeTagParser
      */
     private function parseKeyedNode(string $key, mixed $value, array $meta): Node
     {
+        $directLogicOp = LogicOperators::normalizeDirect($key);
+        if ($directLogicOp !== null) {
+            return $this->parseLogic($directLogicOp, $value, $meta);
+        }
+
+        if (str_starts_with($key, ':logic:')) {
+            return $this->handleUnknownLogicOperator($key, $value, $meta, 'runtime-key');
+        }
+
         if (str_starts_with($key, self::RUNTIME_PREFIX)) {
             $name = substr($key, 1);
             if ($name === '') {
@@ -141,18 +161,27 @@ final class NativeTagParser
      */
     private function parseRuntime(string $name, mixed $body, array $meta): Node
     {
-        $canonicalName = match ($name) {
-            'integer' => 'int',
-            'boolean' => 'bool',
-            default => $name,
-        };
+        if ($name === 'logic') {
+            return $this->parseLogicWrapper($body, $meta);
+        }
+
+        $typedName = ValueTypes::normalize(self::RUNTIME_PREFIX . $name);
+        if ($typedName !== null) {
+            return $this->explicitValueNode($typedName, $this->explicitRuntimeBodyValue($typedName, $body, $meta), $meta);
+        }
+
+        if (str_starts_with($name, 'type:')) {
+            return $this->handleUnknownTypeCommand(self::RUNTIME_PREFIX . $name, $body, $meta);
+        }
+
+        $canonicalName = $name;
 
         if (isset(self::STRUCTURAL_VALUE_RUNTIME[$canonicalName])) {
             return $this->explicitStructuralValueNode($canonicalName, $body, $meta);
         }
 
-        if (isset(self::TYPED_RUNTIME[$name])) {
-            return $this->explicitValueNode($canonicalName, $this->explicitRuntimeBodyValue($canonicalName, $body, $meta), $meta);
+        if ($canonicalName === 'expr') {
+            return Node::runtime('expr', [], [], $this->parseExpressionPayload($this->toPlainData($body), $meta), $meta);
         }
 
         if ($canonicalName === 'if') {
@@ -185,6 +214,128 @@ final class NativeTagParser
         }
 
         return Node::runtime($canonicalName, [], [], $this->toPlainData($body), $meta);
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private function parseLogicWrapper(mixed $body, array $meta): Node
+    {
+        if (!$this->isMap($body)) {
+            $this->fail(':logic requires an object/map payload.', $meta);
+        }
+
+        $entries = $this->mapEntries($body);
+        if (count($entries) !== 1) {
+            $this->fail(':logic requires exactly one operator.', $meta);
+        }
+
+        $key = (string) array_key_first($entries);
+        $op = str_starts_with($key, self::RUNTIME_PREFIX) ? LogicOperators::normalize($key) : null;
+        if ($op === null) {
+            return $this->handleUnknownLogicOperator($key, $entries[$key], $this->appendPointer($meta, $key), 'runtime-wrapper');
+        }
+
+        return $this->parseLogic($op, $entries[$key], $this->appendPointer($meta, $key));
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private function parseExpressionPayload(mixed $body, array $meta): mixed
+    {
+        if (!$this->isMap($body)) {
+            return $body;
+        }
+
+        $entries = $this->mapEntries($body);
+        if (count($entries) !== 1) {
+            return $this->toPlainData($body);
+        }
+
+        $key = (string) array_key_first($entries);
+        $op = LogicOperators::normalize($key, true);
+        if ($op === null) {
+            return $this->toPlainData($body);
+        }
+
+        return $this->parseLogic($op, $entries[$key], $this->appendPointer($meta, $key), true);
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private function parseLogic(string $op, mixed $body, array $meta, bool $allowBareReadableArgs = false): Node
+    {
+        return Node::logic($op, $this->parseLogicArgs($body, $meta, $allowBareReadableArgs), $meta);
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     * @return list<Node>
+     */
+    private function parseLogicArgs(mixed $body, array $meta, bool $allowBareReadable = false): array
+    {
+        if (is_array($body) && !$this->isAssocArray($body)) {
+            return array_map(
+                fn (mixed $child, int|string $index): Node => $this->parseLogicArg($child, $this->appendPointer($meta, (string) $index), $allowBareReadable),
+                $body,
+                array_keys($body),
+            );
+        }
+
+        return [$this->parseLogicArg($body, $this->appendPointer($meta, '#'), $allowBareReadable)];
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private function parseLogicArg(mixed $value, array $meta, bool $allowBareReadable = false): Node
+    {
+        if ($this->isMap($value)) {
+            $entries = $this->mapEntries($value);
+            if (count($entries) === 1) {
+                $key = (string) array_key_first($entries);
+                $op = LogicOperators::normalize($key, $allowBareReadable);
+                if ($op !== null) {
+                    return $this->parseLogic($op, $entries[$key], $this->appendPointer($meta, $key), $allowBareReadable);
+                }
+            }
+        }
+
+        return $this->parseValue($value, $meta);
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private function handleUnknownLogicOperator(string $key, mixed $body, array $meta, string $preserveAs = 'runtime-key'): Node
+    {
+        $message = sprintf('Unknown Abstract Logic operator "%s".', $key);
+        if ($this->strict) {
+            $this->fail($message, $meta);
+        }
+
+        $this->warn($message, $meta);
+        if ($preserveAs === 'runtime-wrapper') {
+            return Node::runtime('logic', [], [], [$key => $this->toPlainData($body)], $meta);
+        }
+
+        return Node::runtime(substr($key, 1), [], [], $this->toPlainData($body), $meta);
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private function handleUnknownTypeCommand(string $key, mixed $body, array $meta): Node
+    {
+        $message = sprintf('Unknown Abstract Type "%s".', $key);
+        if ($this->strict) {
+            $this->fail($message, $meta);
+        }
+
+        $this->warn($message, $meta);
+        return Node::runtime(substr($key, 1), [], [], $this->toPlainData($body), $meta);
     }
 
     /**
@@ -279,7 +430,10 @@ final class NativeTagParser
             if (count($entries) === 1) {
                 $key = array_key_first($entries);
                 if (is_string($key) && str_starts_with($key, self::RUNTIME_PREFIX)) {
-                    return $this->parseKeyedNode($key, $entries[$key], $this->appendPointer($meta, $key));
+                    $node = $this->parseKeyedNode($key, $entries[$key], $this->appendPointer($meta, $key));
+                    if (in_array($node->kind, [Node::RUNTIME, Node::VALUE, Node::LOGIC], true)) {
+                        return $node;
+                    }
                 }
             }
 
@@ -475,6 +629,17 @@ final class NativeTagParser
     private function fail(string $message, array $meta): never
     {
         throw new ParseException($message . ' Source: ' . $this->formatLocation($meta) . '.');
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private function warn(string $message, array $meta): void
+    {
+        $this->diagnostics[] = [
+            'level' => 'warning',
+            'message' => $message . ' Source: ' . $this->formatLocation($meta) . '.',
+        ];
     }
 
     /**

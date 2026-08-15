@@ -52,6 +52,7 @@ final class HtmlMapper implements MapperInterface
             Node::ELEMENT => $this->mapElement($node, $context),
             Node::VALUE => $this->mapValue($node, $parentElement),
             Node::RUNTIME => $this->handleRuntime($node, $context),
+            Node::LOGIC => $this->handleLogic($node, $context),
             default => throw new MappingException(sprintf('HTML mapper cannot map node kind "%s".', $node->kind)),
         };
     }
@@ -90,6 +91,14 @@ final class HtmlMapper implements MapperInterface
     {
         if ($context?->strict ?? $this->strict) {
             throw new MappingException(sprintf('HTML mapper received unresolved runtime node ":%s".', $node->name));
+        }
+        return TargetNode::fragment([]);
+    }
+
+    private function handleLogic(Node $node, ?MappingContext $context): TargetNode
+    {
+        if ($context?->strict ?? $this->strict) {
+            throw new MappingException(sprintf('HTML mapper received unresolved logic node "%s".', $node->op));
         }
         return TargetNode::fragment([]);
     }

@@ -6,8 +6,7 @@ section:
     - ':if':
         '@':
           test:
-            ':expr':
-              var: showDetails
+            ':logic:var': showDetails
         '#':
           - p: Details are visible from context.
         ':else':

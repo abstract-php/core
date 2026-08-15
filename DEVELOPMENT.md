@@ -13,11 +13,11 @@ source -> parser/normalizer -> Abstract Tree -> runtime resolver -> mapper -> em
 Keep those stages separate:
 
 - Parsers read a source syntax and normalize it into `Abstract\Tree\Node`.
-- The runtime resolver consumes processing nodes such as `:expr`, `:if`, `:each`, `:props`, and `:import`.
+- The runtime resolver consumes first-class Logic nodes and Runtime nodes such as `:if`, `:each`, `:props`, and `:import`; Type domain commands normalize to Value nodes, and `:expr` is compatibility syntax.
 - Mappers decide target meaning, such as HTML or React/JSX target nodes.
 - Emitters serialize mapped nodes or tree data into strings.
 
-Runtime nodes beginning with `:` must not render as literal output tags. Strict mode is the correctness target.
+Internal source commands must not render as literal output tags. Strict mode is the correctness target.
 
 ## Setup
 
@@ -122,7 +122,9 @@ Use this checklist:
 
 Avoid custom parsers unless a native/library parser cannot preserve the semantics Abstract needs.
 
-## Adding A Runtime Node
+## Changing A Built-In Runtime Node
+
+This section is for core contributors. It does not describe a public runtime plugin API; the built-in resolver handler set is closed to library consumers.
 
 Runtime behavior lives in `RuntimeResolver`.
 

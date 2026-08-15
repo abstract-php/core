@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Abstract\Parser\Markup;
 
 use Abstract\Exception\ParseException;
+use Abstract\Runtime\LogicOperators;
+use Abstract\Runtime\ValueTypes;
 use Abstract\Tree\Node;
 use DOMCdataSection;
 use DOMComment;
@@ -88,6 +90,26 @@ final class DomMarkupParser
         return $this->parseHtmlString($source, $path, $options);
     }
 
+    public function parseAmlFile(string $path, ?MarkupParseOptions $options = null): Node
+    {
+        if (!is_file($path)) {
+            throw new ParseException(sprintf('AML source "%s" does not exist.', $path));
+        }
+
+        $source = file_get_contents($path);
+        if ($source === false) {
+            throw new ParseException(sprintf('Unable to read AML source "%s".', $path));
+        }
+
+        return $this->parseAmlString($source, $path, $options);
+    }
+
+    public function parseAmlString(string $source, ?string $sourceName = null, ?MarkupParseOptions $options = null): Node
+    {
+        $options ??= new MarkupParseOptions(mode: MarkupParseOptions::MODE_AML);
+        return $this->parseHtmlString($source, $sourceName, $options);
+    }
+
     public function parseHtmlString(string $source, ?string $sourceName = null, ?MarkupParseOptions $options = null): Node
     {
         $options ??= new MarkupParseOptions();
@@ -156,10 +178,12 @@ final class DomMarkupParser
     public function parseXmlString(string $source, ?string $sourceName = null, ?MarkupParseOptions $options = null): Node
     {
         $options ??= new MarkupParseOptions(mode: MarkupParseOptions::MODE_XML);
+        $this->resetPreservedNames();
+        $xml = $this->preserveUnsupportedNames($source, $sourceName);
 
         $document = new DOMDocument('1.0', 'UTF-8');
         $previous = libxml_use_internal_errors(true);
-        $loaded = $document->loadXML($source, $options->xmlLibxmlOptions());
+        $loaded = $document->loadXML($xml, $options->xmlLibxmlOptions());
         $errors = $this->collectLibxmlErrors();
         libxml_use_internal_errors($previous);
 
@@ -230,6 +254,16 @@ final class DomMarkupParser
                 ? []
                 : $this->convertChildren($node, $options, $sourceName, $pointer);
 
+            $logicOp = $this->logicOperatorFromMarkupName($name);
+            if ($logicOp !== null) {
+                return Node::logic($logicOp, $children, $this->meta($options, $sourceName, $pointer, $node));
+            }
+
+            $typedName = $this->typedValueFromMarkupName($name);
+            if ($typedName !== null) {
+                return $this->typedValueNode($typedName, $children, $this->meta($options, $sourceName, $pointer, $node));
+            }
+
             if (str_starts_with($name, ':')) {
                 $runtimeName = substr($name, 1);
                 if ($runtimeName === '') {
@@ -239,6 +273,20 @@ final class DomMarkupParser
                         $pointer,
                         $node,
                     ));
+                }
+
+                if ($runtimeName === 'logic') {
+                    return count($children) === 1 ? $children[0] : Node::fragment($children, $this->meta($options, $sourceName, $pointer, $node));
+                }
+
+                $runtimeTypedName = ValueTypes::normalize($runtimeName);
+                if ($runtimeTypedName !== null) {
+                    return $this->typedValueNode($runtimeTypedName, $children, $this->meta($options, $sourceName, $pointer, $node));
+                }
+
+                $runtimeLogicOp = LogicOperators::normalize($runtimeName, true);
+                if ($runtimeLogicOp !== null) {
+                    return Node::logic($runtimeLogicOp, $children, $this->meta($options, $sourceName, $pointer, $node));
                 }
 
                 return Node::runtime($runtimeName, $props, $children, null, $this->meta($options, $sourceName, $pointer, $node));
@@ -374,7 +422,10 @@ final class DomMarkupParser
 
         $closing = $matches[1] === '/';
         $name = $matches[2];
-        if (str_starts_with($name, ':') && !$this->isPortableRuntimeTagName($name)) {
+        if (str_starts_with($name, ':')
+            && !$this->isPortableRuntimeTagName($name)
+            && LogicOperators::normalize(substr($name, 1), true) === null
+            && ValueTypes::normalize(substr($name, 1)) === null) {
             throw new ParseException($this->formatSourceTextError(
                 'Runtime markup node names after ":" must use portable ASCII names.',
                 $source,
@@ -421,6 +472,42 @@ final class DomMarkupParser
     private function isPortableRuntimeTagName(string $name): bool
     {
         return preg_match('/^:[A-Za-z_][A-Za-z0-9_.-]*$/', $name) === 1;
+    }
+
+    private function logicOperatorFromMarkupName(string $name): ?string
+    {
+        if (!str_starts_with($name, ':logic:')) {
+            return null;
+        }
+
+        return LogicOperators::normalize($name, true);
+    }
+
+    private function typedValueFromMarkupName(string $name): ?string
+    {
+        return str_starts_with($name, 'type:') ? ValueTypes::normalize($name) : null;
+    }
+
+    /**
+     * @param list<Node> $children
+     * @param array<string, mixed> $meta
+     */
+    private function typedValueNode(string $type, array $children, array $meta): Node
+    {
+        $rawValue = count($children) === 1 && $children[0]->kind === Node::VALUE
+            ? $children[0]->value
+            : array_map(static fn (Node $child): mixed => $child->kind === Node::VALUE ? $child->value : $child->toArray(), $children);
+
+        return match ($type) {
+            'string' => Node::value('string', is_scalar($rawValue) || $rawValue === null ? (string) $rawValue : json_encode($rawValue, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $meta),
+            'int' => Node::value('int', (int) (is_scalar($rawValue) || $rawValue === null ? $rawValue : 0), $meta),
+            'float' => Node::value('float', (float) (is_scalar($rawValue) || $rawValue === null ? $rawValue : 0), $meta),
+            'bool' => Node::value('bool', $rawValue === true || strtolower((string) $rawValue) === 'true', $meta),
+            'null' => Node::value('null', null, $meta),
+            'array' => Node::value('array', is_array($rawValue) ? array_values($rawValue) : [$rawValue], $meta),
+            'object' => Node::value('object', is_array($rawValue) ? $rawValue : [], $meta),
+            default => Node::value($type, $rawValue, $meta),
+        };
     }
 
     private function tagPlaceholder(string $name): string

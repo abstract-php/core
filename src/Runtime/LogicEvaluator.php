@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Abstract\Runtime;
 
 use Abstract\Exception\RuntimeResolutionException;
+use Abstract\Tree\Node;
 
 final class LogicEvaluator
 {
@@ -13,6 +14,10 @@ final class LogicEvaluator
      */
     public function evaluate(mixed $expression, array $context = []): mixed
     {
+        if ($expression instanceof Node && $expression->kind === Node::LOGIC) {
+            return $this->evaluateLogicNode($expression, $context);
+        }
+
         if (!is_array($expression)) {
             return $expression;
         }
@@ -31,6 +36,10 @@ final class LogicEvaluator
 
         $operator = array_key_first($expression);
         $operand = $expression[$operator];
+        $op = is_string($operator) ? LogicOperators::normalize($operator, true) : null;
+        if ($op !== null) {
+            return $this->evaluateOperation($op, is_array($operand) && array_is_list($operand) ? $operand : [$operand], $context);
+        }
 
         return match ($operator) {
             'var' => $this->variable($operand, $context),
@@ -47,8 +56,60 @@ final class LogicEvaluator
             '-' => $this->subtract($operand, $context),
             '*' => array_product($this->numbers($operand, $context)),
             '/' => $this->divide($operand, $context),
+            '%' => $this->modulo($operand, $context),
             default => throw new RuntimeResolutionException(sprintf('Unknown Abstract Logic operator "%s".', $operator)),
         };
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function evaluateLogicNode(Node $node, array $context): mixed
+    {
+        return $this->evaluateOperation((string) $node->op, $node->args, $context);
+    }
+
+    /**
+     * @param list<mixed> $args
+     * @param array<string, mixed> $context
+     */
+    private function evaluateOperation(string $op, array $args, array $context): mixed
+    {
+        return match ($op) {
+            'var' => $this->variable(array_map(fn (mixed $arg): mixed => $this->argumentValue($arg, $context), $args), $context),
+            'eq' => $this->compare($args, $context, static fn (mixed $left, mixed $right): bool => $left == $right),
+            'ne' => $this->compare($args, $context, static fn (mixed $left, mixed $right): bool => $left != $right),
+            'gt' => $this->compare($args, $context, static fn (mixed $left, mixed $right): bool => $left > $right),
+            'gte' => $this->compare($args, $context, static fn (mixed $left, mixed $right): bool => $left >= $right),
+            'lt' => $this->compare($args, $context, static fn (mixed $left, mixed $right): bool => $left < $right),
+            'lte' => $this->compare($args, $context, static fn (mixed $left, mixed $right): bool => $left <= $right),
+            'and' => $this->all($args, $context),
+            'or' => $this->any($args, $context),
+            'not' => !$this->truthy($this->argumentValue($args[0] ?? null, $context)),
+            'add' => array_sum($this->numbers($args, $context)),
+            'sub' => $this->subtract($args, $context),
+            'mul' => array_product($this->numbers($args, $context)),
+            'div' => $this->divide($args, $context),
+            'mod' => $this->modulo($args, $context),
+            default => throw new RuntimeResolutionException(sprintf('Unknown Abstract Logic operator "%s".', $op)),
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function argumentValue(mixed $value, array $context): mixed
+    {
+        if ($value instanceof Node) {
+            return match ($value->kind) {
+                Node::VALUE => $value->value,
+                Node::LOGIC => $this->evaluateLogicNode($value, $context),
+                Node::FRAGMENT => array_map(fn (Node $child): mixed => $this->argumentValue($child, $context), $value->children),
+                default => $value,
+            };
+        }
+
+        return $this->evaluate($value, $context);
     }
 
     /**
@@ -91,8 +152,8 @@ final class LogicEvaluator
             return false;
         }
 
-        $left = $this->evaluate($values[0], $context);
-        $right = $this->evaluate($values[1], $context);
+        $left = $this->argumentValue($values[0], $context);
+        $right = $this->argumentValue($values[1], $context);
         return (bool) $comparison($left, $right);
     }
 
@@ -102,7 +163,7 @@ final class LogicEvaluator
     private function all(mixed $operand, array $context): bool
     {
         foreach ((array) $operand as $item) {
-            if (!$this->truthy($this->evaluate($item, $context))) {
+            if (!$this->truthy($this->argumentValue($item, $context))) {
                 return false;
             }
         }
@@ -115,7 +176,7 @@ final class LogicEvaluator
     private function any(mixed $operand, array $context): bool
     {
         foreach ((array) $operand as $item) {
-            if ($this->truthy($this->evaluate($item, $context))) {
+            if ($this->truthy($this->argumentValue($item, $context))) {
                 return true;
             }
         }
@@ -130,7 +191,7 @@ final class LogicEvaluator
     {
         return array_map(
             static fn (mixed $value): float|int => is_int($value) ? $value : (float) $value,
-            array_map(fn (mixed $item): mixed => $this->evaluate($item, $context), (array) $operand),
+            array_map(fn (mixed $item): mixed => $this->argumentValue($item, $context), (array) $operand),
         );
     }
 
@@ -164,6 +225,19 @@ final class LogicEvaluator
             }
             return $carry / $item;
         }, $first);
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function modulo(mixed $operand, array $context): float|int
+    {
+        $numbers = $this->numbers($operand, $context);
+        if (count($numbers) < 2) {
+            return 0;
+        }
+
+        return $numbers[0] % $numbers[1];
     }
 
     public function truthy(mixed $value): bool

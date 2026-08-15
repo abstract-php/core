@@ -6,9 +6,7 @@
     "#": [
       {
         "h2": {
-          ":expr": {
-            "var": "props.title"
-          }
+          ":logic:var": "props.title"
         }
       }
     ]

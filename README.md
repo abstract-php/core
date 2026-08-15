@@ -1,358 +1,284 @@
-# Abstract
+# Abstract Core For PHP
 
-Abstract is a spec-first, language-agnostic tree processor. It turns structured source formats into a canonical Abstract Tree, resolves safe runtime nodes, maps that tree into a target model, and emits output such as HTML, JSX, JSON, schemas, workflows, or future custom targets.
+This package is the PHP implementation of Abstract. It parses Abstract source into the shared canonical tree, resolves safe data-driven commands, maps the tree for a target, and emits source or rendered output.
 
-This repository is the PHP v0 implementation. The concepts, fixtures, and docs are intentionally portable so a future JavaScript/TypeScript implementation can follow the same behavior.
+Start with the shared documentation if Abstract is new to you:
 
-## Status
+- [Core Concepts](../docs/CORE-CONCEPTS.md): the parser, node, resolver, mapper, and emitter pipeline.
+- [Source Commands](../docs/SOURCE-COMMANDS.md): every built-in command, preferred spelling, alias, result, and constraint.
+- [Extending Abstract](../docs/EXTENDING.md): supported custom mappers, emitters, render targets, and external formats.
+- [Feature Parity](../FEATURES.md): PHP and TypeScript support compared.
 
-Abstract Core v0 currently supports:
+## Index
 
-- JSON tag-key syntax
-- canonical `element`, `runtime`, `value`, and `fragment` nodes
-- primitive type inference
-- explicit typed nodes such as `:string`, `:int`, `:float`, `:bool`, `:null`, `:array`, and `:object`
-- `@` props and `#` children
-- shorthand object and array children
-- `:props` and `:attributes` parent prop modifiers
-- data-based `:expr`, `:if`, `:else`, and `:each`
-- inline `:import` and `:include`
-- DOMDocument-backed HTML and XML markup parsing
-- YAML, TOML, and Pkl parsing through the shared tag-key normalizer
-- compact, tagged, and canonical JSON tree export
-- strict and loose runtime modes
-- HTML, XML, YAML, TOML, Pkl, and JSX-like output pipelines
-- target-aware custom render targets and mapper overrides
-- shared JSON fixtures and PHPUnit coverage
-- benchmark scripts for JSON core flows and large HTML roundtrips
+- [Requirements And Installation](#requirements-and-installation)
+- [Quick Start](#quick-start)
+- [Source, Tree, Resolution, And Rendering](#source-tree-resolution-and-rendering)
+- [Parsing](#parsing)
+- [Source Emission](#source-emission)
+- [Rendering](#rendering)
+- [Strict And Loose Modes](#strict-and-loose-modes)
+- [Imports](#imports)
+- [Custom Targets](#custom-targets)
+- [Examples And Development](#examples-and-development)
 
-Unsafe code execution is not enabled. `:php`, `:js`, `:ts`, and `:code` are recognized as payload directives, but the default strict runtime rejects them instead of executing or rendering them.
+## Requirements And Installation
 
-## Installation
+- PHP 8.2 or later
+- Composer
+- PHP DOM/libxml for HTML, AML, and XML parsing
+- the `pkl` CLI only when using Pkl parsing
+
+From this package checkout:
 
 ```bash
 composer install
 ```
 
-## Quick Example
+The package namespace is `Abstract\` and Composer package name is `abstracts/abstract`.
+
+## Quick Start
+
+This is the same walkthrough used in the TypeScript guide.
 
 ```php
 <?php
 
-require 'vendor/autoload.php';
+require __DIR__ . '/vendor/autoload.php';
 
 use Abstract\AbstractCore;
 
-$core = new AbstractCore();
-
-$tree = $core->parseJson('{
-  "div": {
-    "@": {
-      "class": "card"
-    },
-    "#": [
-      { "h1": "Title" },
-      { "p": "Body" }
-    ]
-  }
-}');
-
-echo $core->renderHtml($tree);
-// <div class="card"><h1>Title</h1><p>Body</p></div>
-```
-
-## JSON Tag-Key Syntax
-
-The user syntax is tag-key based:
-
-```json
-{
-  "div": "hello"
-}
-```
-
-This normalizes to an element named `div` with one typed string child.
-
-Canonical props and children:
-
-```json
-{
-  "div": {
-    "@": {
-      "class": "card",
-      "id": "main"
-    },
-    "#": [
-      {
-        "span": "Hello"
-      }
-    ]
-  }
-}
-```
-
-Shorthand child objects are supported:
-
-```json
-{
-  "div": {
-    "h1": "Title",
-    "p": "Body"
-  }
-}
-```
-
-Repeated JSON object keys are impossible, so repeated elements must use arrays:
-
-```json
-{
-  "ul": [
-    { "li": "One" },
-    { "li": "Two" }
-  ]
-}
-```
-
-## Runtime Nodes
-
-Keys beginning with `:` are runtime nodes. They are used during processing and are never rendered as literal output tags.
-
-```json
-{
-  "div": [
-    { ":attributes": { "class": "card" } },
-    { "span": "Hello" }
-  ]
-}
-```
-
-This renders as:
-
-```html
-<div class="card"><span>Hello</span></div>
-```
-
-Runtime logic is data-based:
-
-```json
+$source = <<<'JSON'
 {
   ":if": {
     "@": {
       "test": {
-        ":expr": { "var": "user.isLoggedIn" }
+        ":logic:gte": [
+          { ":logic:var": "order.total" },
+          { ":type:int": 100 }
+        ]
       }
     },
-    "#": [
-      { "Dashboard": [] }
-    ],
-    ":else": [
-      { "Login": [] }
-    ]
+    "#": [{ "p": "Free shipping" }],
+    ":else": [{ "p": "Shipping calculated at checkout" }]
   }
+}
+JSON;
+
+$core = AbstractCore::default();
+$tree = $core->parseJson($source);
+
+echo $core->renderHtml($tree, [
+    'order' => ['total' => 125],
+]);
+```
+
+Output:
+
+```html
+<p>Free shipping</p>
+```
+
+The parser creates canonical nodes. `renderHtml()` then resolves `:logic:gte`, `:logic:var`, and `:if`, maps the selected branch to HTML, and emits the string.
+
+## Source, Tree, Resolution, And Rendering
+
+Use the operation that matches the job:
+
+```php
+$tree = $core->parseJson($source);
+
+// Editable Abstract source. Commands are preserved.
+$jsonSource = $core->sourceJson($tree);
+$amlSource = $core->sourceAml($tree);
+
+// Canonical kind/name/type/op tree for inspection or interchange.
+$canonical = $core->treeJson($tree);
+
+// Evaluated canonical tree, before target mapping.
+$resolved = $core->resolve($tree, ['order' => ['total' => 125]]);
+
+// Final resolve -> map -> emit path.
+$html = $core->renderHtml($tree, ['order' => ['total' => 125]]);
+```
+
+`sourceJson()` and `sourceAml()` do not evaluate conditions or loops. `treeJson()` does not convert back to tag-key source. See [Source Emission And Rendering](../docs/CORE-CONCEPTS.md#source-emission-and-rendering) for the conceptual difference.
+
+## Parsing
+
+`AbstractCore` exposes these parser methods:
+
+| Format | String method | File method | Notes |
+| --- | --- | --- | --- |
+| JSON tag-key | `parseJson()` | `parseJsonFile()` | reference native-data syntax |
+| AML | `parseAml()` | `parseAmlFile()` | Abstract command tags such as `<:if>` and `<:logic:eq>` |
+| HTML | `parseHtml()` | `parseHtmlFile()` | DOMDocument-backed markup parsing |
+| XML | `parseXml()` | `parseXmlFile()` | XML parsing with Abstract-aware command preprocessing |
+| YAML | `parseYaml()` | `parseYamlFile()` | normalizes through the native tag-key parser |
+| TOML | `parseToml()` | `parseTomlFile()` | object/table-oriented source |
+| Pkl | `parsePkl()` | `parsePklFile()` | PHP-only; trusted local modules through the `pkl` CLI |
+
+Normal keys become Elements. Primitive values become inferred Values. Internal commands begin with `:`. Use `:type:*` and `:logic:*` for new typed and logic source:
+
+```json
+{
+  ":logic:eq": [
+    { ":logic:var": "user.role" },
+    { ":type:string": "admin" }
+  ]
 }
 ```
 
+The complete grammar is maintained in the [Source Commands](../docs/SOURCE-COMMANDS.md), not duplicated here.
+
+### Markup Options
+
+`MarkupParseOptions` controls mode-specific behavior such as fragments, whitespace, comments, doctypes, source metadata, strictness, runtime tags, nonstandard names, boolean attributes, and libxml flags.
+
+```php
+use Abstract\Parser\Markup\MarkupParseOptions;
+
+$tree = $core->parseHtml(
+    '<section><h1>Hello</h1></section>',
+    options: new MarkupParseOptions(includeMeta: false),
+);
+```
+
+Text-only markup remains text and does not gain an implicit paragraph.
+
+## Source Emission
+
+Readable domain-qualified commands are the default:
+
+```php
+$logic = $core->parseJson('{":==":[true,1]}');
+
+echo $core->sourceJson($logic, pretty: false);
+// {":logic:eq":[true,1]}
+
+echo $core->sourceAml($logic, pretty: false);
+// <:logic:eq><:type:bool>true</:type:bool><:type:int>1</:type:int></:logic:eq>
+```
+
+Symbol operator output is optional:
+
+```php
+echo $core->sourceJson($logic, pretty: false, operatorStyle: 'symbol');
+// {":==":[true,1]}
+```
+
+Primitive JSON shorthand remains the default. Request explicit `:type:*` wrappers when source must carry declared types:
+
+```php
+echo $core->sourceJson($logic, explicitTypedValues: true);
+```
+
+Canonical tree output is independent of source spelling:
+
+```php
+echo $core->treeJson($logic, pretty: true);
+```
+
+It contains `kind: "logic"`, canonical `op: "eq"`, and `args`.
+
+## Rendering
+
+Built-in output operations include:
+
+| Method | Output |
+| --- | --- |
+| `renderHtml()` | resolved HTML |
+| `renderXml()` | resolved XML with explicit closing tags |
+| `renderJsx()` | resolved JSX-like source through PHP's React mapper |
+| `renderYaml()` | resolved tree data as YAML |
+| `renderToml()` | resolved tree data as TOML |
+| `renderPkl()` | resolved tree data as Pkl |
+| `render($target, ...)` | any registered Render Target |
+
+TOML and Pkl output require object/map roots because their document models are property-oriented. YAML supports scalar, list, and map roots.
+
+## Strict And Loose Modes
+
+Strict mode is the default.
+
+```php
+$diagnostics = [];
+$tree = $core->parseJson(
+    '{":logic:xor":[true,false]}',
+    strict: false,
+    diagnostics: $diagnostics,
+);
+
+$resolved = $core->resolve($tree, strict: false);
+```
+
+- Strict parsing rejects unknown explicit `:logic:*` and `:type:*` commands.
+- Loose parsing records diagnostics and preserves a safe unresolved Runtime form.
+- Strict resolution rejects unknown Runtime commands, misplaced contextual commands, and inert directives.
+- Loose resolution records warnings and drops nodes it cannot safely resolve.
+
+Loose mode supports editing and diagnostics. It does not execute or register unknown commands.
+
 ## Imports
 
-Imports resolve relative to the current source file and are cached by path, mtime, and content hash.
+`:import` and `:include` resolve relative to the importing source path, then cache parsed files by path, modification time, and content hash.
 
 ```json
 {
   ":import": {
     "@": {
       "src": "./components/Card.abstract.json",
-      "props": {
-        "title": "Welcome"
-      }
+      "props": { "title": "Welcome" }
     },
-    "#": [
-      { "p": "This becomes slot content." }
-    ]
+    "#": [{ "p": "Slot content" }]
   }
 }
 ```
 
-For v0, slot children are appended to the imported root element or fragment. A richer component/slot system can be added later.
+Import props extend the imported resolution context. Slot children append to the imported root Element or Fragment. Missing and circular imports are errors in strict mode.
 
-## HTML Markup Parsing
+The PHP core currently owns filesystem imports directly; there is no public PHP import-loader interface.
 
-HTML can be parsed through the same canonical tree model:
+## Custom Targets
 
-```php
-use Abstract\AbstractCore;
-use Abstract\Emitter\JsonEmitter;
-use Abstract\Parser\Markup\MarkupParseOptions;
-
-$core = new AbstractCore();
-$tree = $core->parseHtmlFile('benchmarks/big-html.html', new MarkupParseOptions(includeMeta: false));
-
-$compactJson = $core->treeJson($tree, pretty: false, mode: JsonEmitter::MODE_COMPACT);
-$html = $core->renderHtml($core->parseJson($compactJson));
-```
-
-The parser uses native DOMDocument/libxml for v0 performance. Correctness is structural: output is not beautified and is not expected to be byte-identical to the source, but parsed nodes, attributes, text, comments, raw script/style content, and doctype data are preserved through the benchmark comparator.
-
-JSON export modes:
-
-- `canonical`: full internal `kind`/`name`/`props`/`children` tree
-- `compact`: storage-oriented tag-key JSON with fewer model strings
-- `tagged`: explicit Abstract tags for API/debug use
-
-Text-only markup is treated as content, not as an implicit DOM paragraph:
+Target customization is intentionally separate from source commands. A custom HTML mapping changes output without changing the canonical tree:
 
 ```php
-$tree = $core->parseHtml('Hello Test');
+<?php
 
-echo $core->treeJson($tree, pretty: false, mode: JsonEmitter::MODE_COMPACT);
-// "Hello Test"
-
-echo $core->renderHtml($tree);
-// Hello Test
-```
-
-## XML, YAML, TOML, And Pkl
-
-All data/config formats decode into native values and then use the same tag-key normalizer as JSON.
-
-```php
-$tree = $core->parseYamlFile('page.abstract.yaml');
-
-echo $core->renderHtml($tree);
-echo $core->renderYaml($tree);
-```
-
-Available parser methods:
-
-- `parseXml`, `parseXmlFile`
-- `parseYaml`, `parseYamlFile`
-- `parseToml`, `parseTomlFile`
-- `parsePkl`, `parsePklFile`
-
-Available render methods:
-
-- `renderXml`
-- `renderYaml`
-- `renderToml`
-- `renderPkl`
-
-YAML supports scalar, list, and map roots. TOML and Pkl rendering require object/map roots because their module/document syntax is property-oriented. Pkl parsing uses the local `pkl` CLI with `eval --format=json --no-project --root-dir`; it is an explicit parser path for trusted local config modules, not implicit code execution.
-
-## Custom Render Targets
-
-`AbstractCore` is a facade over parsers, runtime resolution, render targets, and tree serializers. `renderHtml()`, `renderJsx()`, and `renderXml()` use registered render targets internally, and `render($target, ...)` can call a target by name.
-
-Custom mapping is target-aware. A JSX override does not affect HTML, and an HTML override does not affect JSX.
-
-Custom JSX mapping:
-
-```php
-use Abstract\AbstractCore;
-use Abstract\Emitter\JsxEmitter;
-use Abstract\Mapper\ReactComponent;
-use Abstract\Mapper\ReactMapper;
-use Abstract\Render\RenderTarget;
-
-$core = AbstractCore::default()
-    ->withRenderTarget('jsx', RenderTarget::make(
-        ReactMapper::make()
-            ->component('input', ReactComponent::imported(
-                source: '@headlessui/react',
-                export: 'Input',
-                as: 'HeadlessInput',
-            )),
-        new JsxEmitter(),
-    ));
-
-echo $core->renderJsx($tree);
-```
-
-Output:
-
-```jsx
-import { Input as HeadlessInput } from "@headlessui/react";
-
-<HeadlessInput name="email" />
-```
-
-Custom HTML mapping:
-
-```php
 use Abstract\AbstractCore;
 use Abstract\Emitter\HtmlEmitter;
 use Abstract\Mapper\HtmlElementMapping;
 use Abstract\Mapper\HtmlMapper;
 use Abstract\Render\RenderTarget;
 
-$core = AbstractCore::default()
-    ->withRenderTarget('html', RenderTarget::make(
-        HtmlMapper::make()
-            ->element('input', HtmlElementMapping::tag('x-input')),
+$core = AbstractCore::default()->withRenderTarget(
+    'html',
+    RenderTarget::make(
+        HtmlMapper::make()->element('input', HtmlElementMapping::tag('x-input')),
         new HtmlEmitter(),
-    ));
-
-echo $core->renderHtml($tree);
+    ),
+);
 ```
 
-Output:
+For complete custom mapper/emitter examples and closed extension boundaries, use [Extending Abstract](../docs/EXTENDING.md).
 
-```html
-<x-input name="email"></x-input>
-```
-
-Config-driven customization is also available for simple JSX components and HTML tag replacement:
-
-```php
-$core = AbstractCore::fromConfig([
-    'targets' => [
-        'jsx' => [
-            'components' => [
-                'input' => [
-                    'source' => '@headlessui/react',
-                    'export' => 'Input',
-                    'as' => 'HeadlessInput',
-                ],
-            ],
-        ],
-        'html' => [
-            'elements' => [
-                'input' => ['tag' => 'x-input'],
-            ],
-        ],
-    ],
-]);
-```
-
-YAML, TOML, Pkl, and `treeJson()` currently serialize resolved Abstract Tree data directly. They remain configurable through their render methods and may gain dedicated mappers later.
-
-## Tests
+## Examples And Development
 
 ```bash
-./vendor/bin/phpunit --configuration phpunit.xml
-```
-
-Current verified result:
-
-```text
-OK (53 tests, 87 assertions)
-```
-
-## Benchmarks
-
-```bash
+composer test
 php benchmarks/core-benchmark.php
 php benchmarks/markup-benchmark.php
 ```
 
-Benchmark results are recorded in [PERFORMANCE.md](PERFORMANCE.md).
+Runnable examples are in [`examples/`](./examples/), including logic, imports, AML, XML, YAML, TOML, Pkl, mappings, and large HTML round trips.
 
-## Examples
+Additional PHP references:
 
-Runnable examples live in [examples/](examples/). They include JSON-to-HTML, React/JSX mapping, runtime logic, imports, text-only markup, XML/YAML/TOML/Pkl scenarios, custom render targets, a small HTML roundtrip, and a large `examples/big-html.html` roundtrip that writes compact JSON and HTML output under `examples/output/`.
+- [SPEC.md](./SPEC.md): PHP-specific formal behavior and implementation notes.
+- [ARCHITECTURE.md](./ARCHITECTURE.md): PHP package structure and ownership.
+- [DEVELOPMENT.md](./DEVELOPMENT.md): change and verification workflow.
+- [PERFORMANCE.md](./PERFORMANCE.md): benchmark method and recorded results.
+- [REPORT.md](./REPORT.md): historical rescue and design record.
 
-## Documentation
-
-- [SPEC.md](SPEC.md) defines the portable Abstract syntax and processing rules.
-- [ARCHITECTURE.md](ARCHITECTURE.md) explains the PHP v0 implementation.
-- [DEVELOPMENT.md](DEVELOPMENT.md) explains how to change the codebase safely.
-- [REPORT.md](REPORT.md) records the repo rescue and design decisions.
-- [PERFORMANCE.md](PERFORMANCE.md) records benchmark method and results.
+The root [README](../README.md), [Core Concepts](../docs/CORE-CONCEPTS.md), and [Source Commands](../docs/SOURCE-COMMANDS.md) are the canonical shared documentation.

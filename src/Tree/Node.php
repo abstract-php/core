@@ -12,11 +12,13 @@ final class Node
     public const RUNTIME = 'runtime';
     public const VALUE = 'value';
     public const FRAGMENT = 'fragment';
+    public const LOGIC = 'logic';
 
     /**
      * @param array<string, mixed> $props
      * @param list<Node> $children
      * @param array<string, mixed> $meta
+     * @param list<Node> $args
      */
     private function __construct(
         public readonly string $kind,
@@ -26,8 +28,10 @@ final class Node
         public readonly ?string $type = null,
         public readonly mixed $value = null,
         public readonly array $meta = [],
+        public readonly ?string $op = null,
+        public readonly array $args = [],
     ) {
-        if (!in_array($kind, [self::ELEMENT, self::RUNTIME, self::VALUE, self::FRAGMENT], true)) {
+        if (!in_array($kind, [self::ELEMENT, self::RUNTIME, self::VALUE, self::FRAGMENT, self::LOGIC], true)) {
             throw new InvalidArgumentException(sprintf('Unknown Abstract node kind "%s".', $kind));
         }
     }
@@ -75,11 +79,20 @@ final class Node
     }
 
     /**
+     * @param list<Node> $args
+     * @param array<string, mixed> $meta
+     */
+    public static function logic(string $op, array $args = [], array $meta = []): self
+    {
+        return new self(self::LOGIC, null, [], [], null, null, $meta, $op, self::assertChildren($args));
+    }
+
+    /**
      * @param array<string, mixed> $props
      */
     public function withProps(array $props): self
     {
-        return new self($this->kind, $this->name, $props, $this->children, $this->type, $this->value, $this->meta);
+        return new self($this->kind, $this->name, $props, $this->children, $this->type, $this->value, $this->meta, $this->op, $this->args);
     }
 
     /**
@@ -87,12 +100,12 @@ final class Node
      */
     public function withChildren(array $children): self
     {
-        return new self($this->kind, $this->name, $this->props, self::assertChildren($children), $this->type, $this->value, $this->meta);
+        return new self($this->kind, $this->name, $this->props, self::assertChildren($children), $this->type, $this->value, $this->meta, $this->op, $this->args);
     }
 
     public function withValue(mixed $value): self
     {
-        return new self($this->kind, $this->name, $this->props, $this->children, $this->type, $value, $this->meta);
+        return new self($this->kind, $this->name, $this->props, $this->children, $this->type, $value, $this->meta, $this->op, $this->args);
     }
 
     /**
@@ -143,6 +156,17 @@ final class Node
             return $result;
         }
 
+        if ($this->kind === self::LOGIC) {
+            $result = ['kind' => self::LOGIC, 'op' => $this->op];
+            if ($this->args !== []) {
+                $result['args'] = array_map(static fn (self $arg): array => $arg->toArray(), $this->args);
+            }
+            if ($this->meta !== []) {
+                $result['meta'] = $this->meta;
+            }
+            return $result;
+        }
+
         $result = ['kind' => self::FRAGMENT];
         if ($this->children !== []) {
             $result['children'] = array_map(static fn (self $child): array => $child->toArray(), $this->children);
@@ -180,6 +204,11 @@ final class Node
             ),
             self::FRAGMENT => self::fragment(
                 self::childrenFromArray($data['children'] ?? []),
+                self::expectArray($data['meta'] ?? []),
+            ),
+            self::LOGIC => self::logic(
+                self::expectString($data['op'] ?? null, 'logic.op'),
+                self::childrenFromArray($data['args'] ?? []),
                 self::expectArray($data['meta'] ?? []),
             ),
             default => throw new InvalidArgumentException('Invalid serialized Abstract node.'),

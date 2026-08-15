@@ -30,7 +30,10 @@ final class JsonTagParser
         return $this->parseString($content, $path);
     }
 
-    public function parseString(string $json, ?string $source = null): Node
+    /**
+     * @param list<array{level: string, message: string}>|null $diagnostics
+     */
+    public function parseString(string $json, ?string $source = null, bool $strict = true, ?array &$diagnostics = null): Node
     {
         try {
             $decoded = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
@@ -38,6 +41,6 @@ final class JsonTagParser
             throw new ParseException(sprintf('Invalid Abstract JSON: %s', $exception->getMessage()), 0, $exception);
         }
 
-        return $this->nativeParser->parse($decoded, $source);
+        return $this->nativeParser->parse($decoded, $source, $strict, $diagnostics);
     }
 }

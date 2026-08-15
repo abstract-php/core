@@ -52,6 +52,7 @@ final class RuntimeResolver
             Node::FRAGMENT => $this->resolveChildren($node->children, $context, null, $importStack),
             Node::ELEMENT => [$this->resolveElement($node, $context, $importStack)],
             Node::VALUE => [$node],
+            Node::LOGIC => [Node::value($this->inferType($value = $this->logic()->evaluate($node, $context)), $value, $node->meta)],
             Node::RUNTIME => $this->resolveRuntimeNode($node, $context, $parentKind, $importStack),
             default => $this->failOrSkip(sprintf('Cannot resolve unknown node kind "%s".', $node->kind)),
         };
@@ -307,6 +308,10 @@ final class RuntimeResolver
 
             if ($value->kind === Node::RUNTIME && $value->name === 'expr') {
                 return $this->expressionValue($value, $context);
+            }
+
+            if ($value->kind === Node::LOGIC) {
+                return $this->logic()->evaluate($value, $context);
             }
 
             $resolved = $this->resolveToList($value, $context, null, $importStack);

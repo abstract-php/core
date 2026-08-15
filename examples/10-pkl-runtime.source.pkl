@@ -6,10 +6,10 @@ card = new Mapping {
     new Mapping { ["h2"] = "Pkl Runtime Example" },
     new Mapping { [":each"] = new Mapping {
       ["@"] = new Mapping {
-        ["items"] = new Mapping { [":expr"] = new Mapping { ["var"] = "items" } }
+        ["items"] = new Mapping { [":logic:var"] = "items" }
         ["as"] = "item"
       }
-      ["#"] = List(new Mapping { ["span"] = new Mapping { [":expr"] = new Mapping { ["var"] = "item" } } })
+      ["#"] = List(new Mapping { ["span"] = new Mapping { [":logic:var"] = "item" } })
     } }
   )
 }

@@ -8,6 +8,7 @@ final class MarkupParseOptions
 {
     public const MODE_HTML = 'html';
     public const MODE_XML = 'xml';
+    public const MODE_AML = 'aml';
 
     public function __construct(
         public readonly string $mode = self::MODE_HTML,
